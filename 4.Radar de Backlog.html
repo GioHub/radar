@@ -1,0 +1,1822 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Radar de Backlog</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<style>
+/* Layout: sticky header + tab rail over one working surface; the hierarchy grid is the core view, summary panels sit above the detail. */
+:root{
+  --bg:#f3f5f7; --surface:#ffffff; --sunk:#e8edf1; --ink:#15202a; --ink2:#4a5866; --ink3:#7a8794; --line:#dbe1e7;
+  --accent:#0c6970; --accent-ink:#ffffff; --accent-soft:#d8eded;
+  --ok:#23855a; --warn:#b06900; --crit:#c2303a; --info:#4c6c8c;
+  --s-new:#a3adb8; --s-prog:#2f78c8; --s-done:#2c9a68; --s-rem:#d2d8de;
+  --t-epic:#e06d00; --t-feature:#7a3d96; --t-story:#0093c4; --t-task:#c99a00; --t-bug:#c8283a; --t-other:#7f8a96;
+  --f-ui:"Instrument Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-mono:"JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --r:8px;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --bg:#10151a; --surface:#172028; --sunk:#0c1115; --ink:#e3e9ef; --ink2:#a5b2bf; --ink3:#76838f; --line:#29333d;
+  --accent:#4cc0bd; --accent-ink:#062020; --accent-soft:#143334;
+  --ok:#4cc38a; --warn:#e3a33b; --crit:#f0646c; --info:#8fb0d0;
+  --s-new:#5d6873; --s-prog:#4f9ae6; --s-done:#3fb97f; --s-rem:#313b45;
+  --t-epic:#ff8a2a; --t-feature:#b47ad6; --t-story:#2fb8e6; --t-task:#e7c33a; --t-bug:#f05a6a; --t-other:#94a0ac;
+  color-scheme:dark; } }
+:root[data-theme="dark"]{
+  --bg:#10151a; --surface:#172028; --sunk:#0c1115; --ink:#e3e9ef; --ink2:#a5b2bf; --ink3:#76838f; --line:#29333d;
+  --accent:#4cc0bd; --accent-ink:#062020; --accent-soft:#143334;
+  --ok:#4cc38a; --warn:#e3a33b; --crit:#f0646c; --info:#8fb0d0;
+  --s-new:#5d6873; --s-prog:#4f9ae6; --s-done:#3fb97f; --s-rem:#313b45;
+  --t-epic:#ff8a2a; --t-feature:#b47ad6; --t-story:#2fb8e6; --t-task:#e7c33a; --t-bug:#f05a6a; --t-other:#94a0ac;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-ui);font-size:14px;line-height:1.45}
+button,input,select{font:inherit;color:inherit}
+.mono{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+.num{font-variant-numeric:tabular-nums}
+a{color:var(--accent)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--surface)}
+
+/* header */
+.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--surface);border-bottom:1px solid var(--line)}
+.wrap{max-width:1320px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.bar{display:flex;align-items:center;gap:12px 20px;flex-wrap:wrap;padding-block:12px 8px}
+.brand{display:flex;align-items:center;gap:10px;min-width:0}
+.brand svg{flex:none}
+.brand b{font-size:17px;font-weight:700;letter-spacing:-.01em}
+.src{display:flex;align-items:center;gap:8px;min-width:0;color:var(--ink2);font-size:13px;flex:1}
+.src .fname{font-weight:600;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.tag{display:inline-flex;align-items:center;gap:4px;padding:1px 8px;border-radius:99px;font-size:11.5px;font-weight:600;letter-spacing:.02em;background:var(--sunk);color:var(--ink2);white-space:nowrap}
+.tag.sample{background:var(--accent-soft);color:var(--accent)}
+.btn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--surface);padding:7px 12px;border-radius:7px;cursor:pointer;font-weight:600;font-size:13px;white-space:nowrap}
+.btn:hover{border-color:var(--ink3)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.primary:hover{filter:brightness(1.07)}
+.btn.ghost{border-color:transparent;background:transparent;color:var(--ink2)}
+.btn.ghost:hover{background:var(--sunk)}
+.btn.sm{padding:4px 9px;font-size:12px}
+.tabs-scroll{overflow-x:auto;scrollbar-width:none}
+.tabs-scroll::-webkit-scrollbar{display:none}
+.tabs{display:flex;gap:2px;min-width:max-content}
+.tabs a{display:flex;align-items:center;gap:6px;padding:9px 12px 10px;text-decoration:none;color:var(--ink2);font-weight:600;font-size:13.5px;border-bottom:2px solid transparent}
+.tabs a:hover{color:var(--ink)}
+.tabs a[aria-current="page"]{color:var(--ink);border-bottom-color:var(--accent)}
+.tabs .cnt{font-size:11px;padding:0 6px;border-radius:99px;background:var(--sunk);color:var(--ink2)}
+.tabs .cnt.crit{background:var(--crit);color:#fff}
+
+main{padding-block:20px 60px}
+.notice{display:flex;gap:12px;align-items:center;flex-wrap:wrap;background:var(--accent-soft);color:var(--ink);border-radius:var(--r);padding:10px 14px;margin-bottom:18px;font-size:13.5px}
+.notice p{margin:0;flex:1;min-width:220px}
+h1,h2,h3{margin:0;text-wrap:balance}
+.vhead{display:flex;align-items:end;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+.vhead h1{font-size:22px;font-weight:700;letter-spacing:-.015em}
+.vhead p{margin:2px 0 0;color:var(--ink2)}
+.eyebrow{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--ink3)}
+
+/* KPIs */
+.kpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;margin-bottom:18px}
+.kpi{background:var(--surface);padding:14px 16px;display:flex;flex-direction:column;gap:3px;border:0;text-align:left;cursor:default}
+button.kpi{cursor:pointer}
+button.kpi:hover{background:var(--sunk)}
+.kpi .v{font-size:28px;font-weight:700;letter-spacing:-.02em;font-variant-numeric:tabular-nums;line-height:1.1}
+.kpi .v small{font-size:15px;font-weight:600;color:var(--ink2);margin-left:2px}
+.kpi .s{font-size:12.5px;color:var(--ink2)}
+.kpi .d{font-size:12px;font-weight:600;font-variant-numeric:tabular-nums}
+.d.up{color:var(--ok)} .d.down{color:var(--crit)} .d.flat{color:var(--ink3)}
+.kpi.crit .v{color:var(--crit)}
+.kpi.warn .v{color:var(--warn)}
+@media (max-width:900px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.kpi:first-child{grid-column:1/-1}}
+
+.grid2{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(0,1fr);gap:18px;margin-bottom:18px}
+@media (max-width:980px){.grid2{grid-template-columns:minmax(0,1fr)}}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);min-width:0}
+.panel>header{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line)}
+.panel>header h2{font-size:14.5px;font-weight:700}
+.panel>header .meta{font-size:12.5px;color:var(--ink3)}
+.pbody{padding:6px 16px 14px}
+
+/* bars */
+.sbar{display:flex;height:8px;border-radius:4px;overflow:hidden;background:var(--sunk);min-width:60px}
+.sbar i{display:block;height:100%}
+.c-new{background:var(--s-new)} .c-prog{background:var(--s-prog)} .c-done{background:var(--s-done)} .c-rem{background:var(--s-rem)}
+.pbar{height:6px;border-radius:3px;background:var(--sunk);overflow:hidden;flex:1;min-width:40px}
+.pbar i{display:block;height:100%;background:var(--s-done);border-radius:3px}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--ink2)}
+.legend span{display:inline-flex;align-items:center;gap:5px}
+.legend i{width:9px;height:9px;border-radius:2px;display:inline-block}
+
+/* type icon */
+.ti{width:10px;height:10px;border-radius:2px;flex:none;display:inline-block;background:var(--t-other)}
+.k-epic{background:var(--t-epic)} .k-feature{background:var(--t-feature)} .k-story{background:var(--t-story)} .k-task{background:var(--t-task)} .k-bug{background:var(--t-bug)} .k-other{background:var(--t-other)}
+.ti.k-feature{border-radius:50%}
+.ti.k-task{border-radius:1px;transform:scale(.85)}
+.ti.k-bug{clip-path:polygon(50% 0,100% 50%,50% 100%,0 50%);border-radius:0;width:11px;height:11px}
+
+.pill{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:500;color:var(--ink2);white-space:nowrap}
+.pill::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--s-new)}
+.pill.prog::before{background:var(--s-prog)} .pill.done::before{background:var(--s-done)} .pill.rem::before{background:var(--s-rem);outline:1px solid var(--ink3)}
+
+/* epic list */
+.elist{display:flex;flex-direction:column}
+.erow{display:grid;grid-template-columns:minmax(0,1fr) 150px;gap:6px 18px;padding:12px 0;border-bottom:1px solid var(--line);align-items:center}
+.erow:last-child{border-bottom:0}
+.etitle{display:flex;align-items:center;gap:8px;min-width:0}
+.linkbtn{background:none;border:0;padding:0;cursor:pointer;text-align:left;font-weight:600;color:var(--ink);min-width:0}
+.linkbtn:hover{color:var(--accent);text-decoration:underline}
+.esub{font-size:12.5px;color:var(--ink3);display:flex;gap:6px 12px;flex-wrap:wrap;margin-top:2px}
+.eprog{display:flex;align-items:center;gap:8px}
+.eprog b{font-size:13px;font-variant-numeric:tabular-nums;width:38px;text-align:right}
+.flag{display:inline-flex;align-items:center;gap:3px;font-size:11.5px;font-weight:700;color:var(--warn);white-space:nowrap}
+.flag.crit{color:var(--crit)} .flag.info{color:var(--info)}
+.flag svg{width:12px;height:12px}
+
+/* attention list */
+.alist{list-style:none;margin:0;padding:0}
+.alist li{border-bottom:1px solid var(--line)}
+.alist li:last-child{border-bottom:0}
+.arow{width:100%;display:flex;align-items:center;gap:10px;padding:10px 0;background:none;border:0;cursor:pointer;text-align:left}
+.arow:hover .at{color:var(--accent)}
+.sev{width:8px;height:8px;border-radius:50%;flex:none}
+.sev.crit{background:var(--crit)} .sev.warn{background:var(--warn)} .sev.info{background:var(--info)}
+.at{flex:1;font-weight:500}
+.ac{font-weight:700;font-variant-numeric:tabular-nums}
+
+table{border-collapse:collapse;width:100%}
+.tscroll{overflow-x:auto}
+th{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--ink3);font-weight:600;text-align:left;padding:9px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:middle}
+tr:last-child td{border-bottom:0}
+td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
+tbody tr.click{cursor:pointer}
+tbody tr.click:hover td{background:var(--sunk)}
+.tname{display:flex;align-items:center;gap:8px;font-weight:600;white-space:nowrap}
+.muted{color:var(--ink3)}
+
+/* tree */
+.toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
+.toolbar input[type=search]{flex:1 1 220px;min-width:0;padding:7px 11px;border:1px solid var(--line);border-radius:7px;background:var(--surface)}
+.toolbar select{padding:7px 8px;border:1px solid var(--line);border-radius:7px;background:var(--surface);max-width:180px}
+.chk{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--ink2);padding:0 4px}
+.treeinfo{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:8px;font-size:12.5px;color:var(--ink3)}
+.tree{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.trow{display:grid;grid-template-columns:minmax(0,1fr) 120px 150px 150px 64px;gap:12px;align-items:center;padding:0 14px 0 6px;min-height:38px;border-bottom:1px solid var(--line)}
+.trow:last-child{border-bottom:0}
+.trow.head{min-height:34px;background:var(--sunk);font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--ink3);font-weight:600}
+.trow.r1{background:color-mix(in srgb,var(--sunk) 55%,var(--surface))}
+.trow.dim .tt{color:var(--ink3);font-weight:400}
+.trow.flash{animation:flash 1.6s ease-out}
+@keyframes flash{0%,30%{background:var(--accent-soft)}100%{background:transparent}}
+.tmain{display:flex;align-items:center;gap:7px;min-width:0;padding-left:calc(var(--d,0) * 20px)}
+.chev{width:22px;height:22px;flex:none;display:grid;place-items:center;border:0;background:none;cursor:pointer;border-radius:4px;color:var(--ink3)}
+.chev:hover{background:var(--sunk);color:var(--ink)}
+.chev svg{transition:transform .15s}
+.chev[aria-expanded="true"] svg{transform:rotate(90deg)}
+.chev.sp{visibility:hidden}
+.rid{font-family:var(--f-mono);font-size:11.5px;color:var(--ink3);flex:none}
+.tt{background:none;border:0;padding:0;cursor:pointer;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;color:var(--ink)}
+.r1 .tt,.r2 .tt{font-weight:600}
+.tt:hover{color:var(--accent);text-decoration:underline}
+.kc{font-size:11.5px;color:var(--ink3);white-space:nowrap;flex:none}
+.who{font-size:12.5px;color:var(--ink2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.who.none{color:var(--ink3);font-style:italic}
+.tprog{display:flex;align-items:center;gap:7px}
+.tprog span{font-size:11.5px;color:var(--ink2);font-variant-numeric:tabular-nums;white-space:nowrap;min-width:42px;text-align:right}
+.hrs{text-align:right;font-size:12.5px;font-variant-numeric:tabular-nums;color:var(--ink2)}
+@media (max-width:860px){
+  .trow{grid-template-columns:minmax(0,1fr) 92px;padding-right:10px}
+  .trow .c-st,.trow .c-who,.trow .c-h{display:none}
+  .tmain{padding-left:calc(var(--d,0) * 12px)}
+  .kc{display:none}
+}
+.more{padding:12px 16px;color:var(--ink2);font-size:13px}
+
+/* problems */
+.plist{display:flex;flex-direction:column;gap:10px}
+.pcard{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.pcard>button{width:100%;display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;gap:12px;align-items:center;padding:13px 16px;border:0;background:none;cursor:pointer;text-align:left}
+.pcard>button:hover{background:var(--sunk)}
+.pcard h3{font-size:14.5px;font-weight:700}
+.pcard p{margin:1px 0 0;color:var(--ink2);font-size:13px}
+.pcount{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums}
+.pcard.crit .pcount{color:var(--crit)} .pcard.warn .pcount{color:var(--warn)} .pcard.info .pcount{color:var(--info)}
+.pcard .chv{color:var(--ink3);transition:transform .15s}
+.pcard.open .chv{transform:rotate(90deg)}
+.pcard .tscroll{border-top:1px solid var(--line)}
+.okline{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:13px;color:var(--ink2);margin-top:14px}
+.okline span{display:inline-flex;align-items:center;gap:6px}
+.okline svg{color:var(--ok)}
+.sevgroup{margin-bottom:22px}
+.sevgroup>h2{font-size:12px;margin-bottom:8px}
+
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:7px;overflow:hidden}
+.seg button{border:0;background:var(--surface);padding:6px 12px;cursor:pointer;font-weight:600;font-size:12.5px;color:var(--ink2)}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--surface)}
+
+/* data / help */
+.steps{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:8px;max-width:72ch}
+.steps li{padding-left:4px}
+code{font-family:var(--f-mono);font-size:12px;background:var(--sunk);padding:1px 5px;border-radius:4px}
+.mapgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px 16px;margin-top:6px}
+.field{display:flex;flex-direction:column;gap:4px;font-size:12.5px;color:var(--ink2);font-weight:500;min-width:0}
+.field select,.field input{padding:7px 9px;border:1px solid var(--line);border-radius:7px;background:var(--surface);min-width:0;width:100%}
+.field select.miss{color:var(--ink3)}
+.hint{font-size:12.5px;color:var(--ink3);margin:6px 0 0;max-width:72ch}
+.stack{display:flex;flex-direction:column;gap:18px}
+
+/* drawer */
+.scrim{position:fixed;inset:0;background:rgb(0 0 0 / .28);z-index:20}
+.drawer{position:fixed;top:0;right:0;bottom:0;width:min(500px,100%);background:var(--surface);z-index:21;border-left:1px solid var(--line);display:flex;flex-direction:column;box-shadow:-12px 0 40px rgb(0 0 0 / .14);padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);padding-right:env(safe-area-inset-right,0px)}
+.dhead{display:flex;align-items:center;gap:8px;padding:12px 16px;border-bottom:1px solid var(--line)}
+.dhead .kc{display:inline}
+.dbody{overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:16px}
+.dbody h2{font-size:19px;font-weight:700;letter-spacing:-.01em;line-height:1.3}
+.crumbs{display:flex;flex-wrap:wrap;gap:4px 6px;font-size:12.5px;color:var(--ink3);align-items:center}
+.crumbs button{background:none;border:0;padding:0;cursor:pointer;color:var(--ink2);max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.crumbs button:hover{color:var(--accent);text-decoration:underline}
+.dl{display:grid;grid-template-columns:auto minmax(0,1fr);gap:7px 16px;margin:0;font-size:13px}
+.dl dt{color:var(--ink3)} .dl dd{margin:0;overflow-wrap:anywhere}
+.ibox{border-radius:7px;padding:10px 12px;background:var(--sunk);display:flex;flex-direction:column;gap:6px;font-size:13px}
+.ibox div{display:flex;gap:8px;align-items:baseline}
+.ibox .sev{transform:translateY(-1px)}
+.kids{display:flex;flex-direction:column}
+.kid{display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--line);font-size:13px}
+.kid:last-child{border-bottom:0}
+.kid .tt{flex:1}
+.sec-t{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink3);font-weight:600;margin-bottom:6px}
+
+.drop{position:fixed;inset:0;z-index:30;display:grid;place-items:center;background:color-mix(in srgb,var(--bg) 82%,transparent);border:3px dashed var(--accent)}
+.drop div{font-size:20px;font-weight:700;color:var(--accent)}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(20px + env(safe-area-inset-bottom,0px));z-index:40;background:var(--ink);color:var(--surface);padding:9px 16px;border-radius:8px;font-size:13px;font-weight:500;max-width:calc(100% - 32px)}
+.empty{padding:28px 16px;text-align:center;color:var(--ink3)}
+/* indicadores y mapa */
+.arow .chv{display:flex;transition:transform .15s}
+.arow:hover .chv{transform:translateX(2px);color:var(--accent)}
+.packctl{gap:10px 18px}
+.ctl{display:inline-flex;align-items:center;gap:8px}
+.packwrap{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:16px;align-items:start}
+@media (max-width:980px){.packwrap{grid-template-columns:minmax(0,1fr)}}
+.packbox{padding:12px;display:flex;flex-direction:column;align-items:center;gap:10px;min-width:0}
+#pack{width:100%;height:auto;display:block;cursor:zoom-out;touch-action:manipulation}
+#pack circle{cursor:pointer}
+#pack .pk-node:hover{stroke:var(--ink)!important}
+#pack .pk-leaf:hover{stroke:var(--ink)!important;stroke-width:1.5!important}
+.pk-labels text{font:600 11.5px var(--f-ui);fill:var(--ink);text-anchor:middle;dominant-baseline:middle;pointer-events:none;paint-order:stroke;stroke:var(--surface);stroke-width:3px;stroke-linejoin:round}
+.packleg{justify-content:center}
+.legend i.ring{background:transparent;border:1.5px solid var(--ink3);border-radius:50%}
+.legend i.ring.crit{border-color:var(--crit);border-width:2px}
+.packside{padding:16px;display:flex;flex-direction:column;gap:14px;position:sticky;top:calc(env(safe-area-inset-top,0px) + 100px);max-height:calc(100vh - 120px);overflow-y:auto}
+@media (max-width:980px){.packside{position:static;max-height:none}}
+.ps-title{font-size:17px;font-weight:700;line-height:1.3;margin-top:4px;overflow-wrap:anywhere}
+.minip{display:inline-flex;align-items:center;gap:6px;width:92px;flex:none}
+.minip .num{font-size:11.5px;color:var(--ink2);width:34px;text-align:right}
+.kid.ck{align-items:flex-start;padding:9px 0}
+.kid.ck .ti{margin-top:4px}
+.ksub{display:flex;flex-wrap:wrap;gap:2px 10px;font-size:12px;color:var(--ink3);margin-top:2px}
+.ksub span{max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.backbar{display:flex;align-items:center;gap:6px;border:0;border-bottom:1px solid var(--line);background:var(--sunk);padding:9px 16px;font-size:12.5px;font-weight:600;color:var(--ink2);cursor:pointer;text-align:left}
+.backbar:hover{color:var(--accent)}
+
+/* chips, sprints lógicos, proyección, backlog */
+.seg{flex-wrap:wrap}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--surface);border-radius:99px;padding:3px 10px;font-size:12px;cursor:pointer;color:var(--ink2);font-weight:500}
+.chip:hover{border-color:var(--accent);color:var(--ink)}
+.chip b{font-variant-numeric:tabular-nums;color:var(--ink)}
+.chip.on{background:var(--ink);border-color:var(--ink);color:var(--surface)}
+.chip.on b{color:var(--surface)}
+.subk{display:flex;flex-wrap:wrap;gap:6px;padding:0 0 10px 18px}
+.stag{display:inline-block;font-size:11.5px;font-weight:600;padding:1px 8px;border-radius:99px;white-space:nowrap;background:var(--sunk);color:var(--ink2)}
+.stag.ok{background:color-mix(in srgb,var(--s-done) 18%,var(--surface));color:var(--ok)}
+.stag.prog{background:color-mix(in srgb,var(--s-prog) 16%,var(--surface));color:var(--s-prog)}
+.notag{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:13px 16px;cursor:pointer;text-align:left;width:100%}
+.notag:hover{border-color:var(--accent)}
+.ctl input{width:70px;padding:5px 8px;border:1px solid var(--line);border-radius:7px;background:var(--surface)}
+.ctl select{padding:6px 8px;border:1px solid var(--line);border-radius:7px;background:var(--surface);max-width:240px}
+.conf.Alta{color:var(--ok)} .conf.Media{color:var(--warn)} .conf.Baja{color:var(--crit)}
+.warnc{color:var(--warn);font-weight:600}
+.lbody{display:grid;grid-template-columns:minmax(0,auto) minmax(0,1fr);gap:18px;padding:14px 16px 16px}
+@media (max-width:860px){.lbody{grid-template-columns:minmax(0,1fr)}}
+.lhist{min-width:0;overflow-x:auto;max-width:340px}
+.hist{display:block}
+.hist text{font:500 10px var(--f-ui);fill:var(--ink3)}
+.hist .hv{fill:var(--ink2);font-weight:600}
+.hist .hx{stroke:var(--line)}
+.hb{fill:color-mix(in srgb,var(--accent) 45%,var(--surface))}
+.hb.ref{fill:var(--accent)}
+.hb.cur{fill:var(--s-prog);opacity:.55}
+.hl{stroke:var(--ink2);stroke-dasharray:4 3;stroke-width:1.2}
+.spscroll{overflow-x:auto;padding-bottom:6px}
+.sprow{display:flex;gap:10px;min-width:max-content}
+.spcard{width:206px;flex:none;text-align:left;border:1px solid var(--line);background:var(--surface);border-radius:var(--r);padding:10px 12px;display:flex;flex-direction:column;gap:5px;cursor:pointer}
+.spcard:hover{border-color:var(--accent)}
+.spcard.cur{background:color-mix(in srgb,var(--s-prog) 7%,var(--surface));border-color:color-mix(in srgb,var(--s-prog) 55%,var(--line))}
+.sphead{display:flex;justify-content:space-between;align-items:center;gap:6px}
+.sptitle{font-weight:700;font-size:13.5px;line-height:1.3;min-height:2.6em;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.spsub{font-size:12px;color:var(--ink2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.spmeta{font-size:11.5px;color:var(--ink3);display:flex;justify-content:space-between;gap:8px;font-variant-numeric:tabular-nums}
+.spcard .pbar{flex:none;height:5px}
+details.types{margin-top:12px;border-top:1px solid var(--line);padding-top:10px}
+details.types summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--ink2)}
+details.types table{margin-top:6px}
+.toolbar input#blq{flex:1 1 220px;min-width:0;padding:7px 11px;border:1px solid var(--line);border-radius:7px;background:var(--surface)}
+.boardwrap{margin-bottom:18px}
+.board{display:grid;grid-template-columns:minmax(200px,1.15fr) repeat(3,minmax(0,1fr));border:1px solid var(--line);border-radius:var(--r);background:var(--surface);overflow:hidden}
+.board>div{padding:10px;border-bottom:1px solid var(--line);border-left:1px solid var(--line);min-width:0;display:flex;flex-direction:column;gap:6px}
+.board>div.bs{border-left:0}
+.board>.bh{background:var(--sunk);font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--ink3);font-weight:600;padding:8px 10px}
+.bst{display:flex;gap:7px;align-items:flex-start;min-width:0}
+.bst .ti{margin-top:4px}
+.bst .tt{white-space:normal;font-weight:600}
+.bsm{display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:12px;color:var(--ink2)}
+.tcard{text-align:left;border:1px solid var(--line);border-radius:6px;background:var(--bg);padding:7px 9px;cursor:pointer;display:flex;flex-direction:column;gap:4px;font-size:12.5px;width:100%}
+.tcard:hover{border-color:var(--accent)}
+.tct{line-height:1.3;overflow-wrap:anywhere}
+.tcm{font-size:11.5px;color:var(--ink3);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.av{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:50%;background:var(--accent-soft);color:var(--accent);font-size:9.5px;font-weight:700;flex:none}
+@media (max-width:760px){
+  .board{grid-template-columns:minmax(0,1fr)}
+  .board>div{border-left:0}
+  .board>.bh{display:none}
+  .board>div.ec{display:none}
+  .board>div[data-col]::before{content:attr(data-col);font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--ink3);font-weight:600}
+  .board>div.bs{background:var(--sunk)}
+}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+
+<header class="top">
+  <div class="wrap">
+    <div class="bar">
+      <div class="brand">
+        <svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true"><rect x="1" y="2" width="9" height="6" rx="1.5" fill="var(--t-epic)"/><rect x="6" y="10" width="9" height="6" rx="1.5" fill="var(--t-feature)"/><rect x="11" y="18" width="9" height="6" rx="1.5" fill="var(--t-story)"/><path d="M4 8v5h2M9 16v5h2" stroke="var(--ink3)" stroke-width="1.4" fill="none"/></svg>
+        <b>Radar de Backlog</b>
+      </div>
+      <div class="src" id="src"></div>
+      <div style="display:flex;gap:8px">
+        <input type="file" id="file" accept=".csv,.tsv,.txt,.xlsx,.xls" hidden>
+        <button class="btn primary" id="btnLoad" type="button">
+          <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 11V2M4.5 5.5 8 2l3.5 3.5M2 11v3h12v-3" stroke="currentColor" stroke-width="1.7" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Cargar export
+        </button>
+      </div>
+    </div>
+    <div class="tabs-scroll"><nav class="tabs" id="tabs" aria-label="Vistas"></nav></div>
+  </div>
+</header>
+<main class="wrap" id="main"></main>
+<div class="scrim" id="scrim" hidden></div>
+<aside class="drawer" id="drawer" hidden aria-label="Detalle del elemento"></aside>
+<div class="drop" id="drop" hidden><div>Suelta el archivo CSV o Excel</div></div>
+<div class="toast" id="toast" role="status" hidden></div>
+
+<script>
+'use strict';
+/* ---------- utilidades ---------- */
+const $ = (s, r = document) => r.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const norm = s => String(s ?? '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+const fmt = n => n == null || isNaN(n) ? '—' : Number(n).toLocaleString('es', {maximumFractionDigits: 1});
+const pct = (a, b) => b ? Math.round(a / b * 100) : 0;
+const DAY = 864e5;
+const startOfDay = d => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+const fmtDate = d => d ? d.toLocaleDateString('es', {day: 'numeric', month: 'short', year: 'numeric'}) : '—';
+const store = {
+  get(k, def) { try { const v = localStorage.getItem(k); return v == null ? def : JSON.parse(v); } catch (e) { return def; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch (e) { return false; } },
+  del(k) { try { localStorage.removeItem(k); } catch (e) {} }
+};
+function toast(msg) { const t = $('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast._t); toast._t = setTimeout(() => t.hidden = true, 3200); }
+
+/* ---------- conocimiento de Azure DevOps ---------- */
+const FIELDS = [
+  {key:'id', label:'ID', aliases:['id','work item id','identificador','id elemento de trabajo']},
+  {key:'type', label:'Tipo de elemento', aliases:['work item type','tipo de elemento de trabajo','tipo','type']},
+  {key:'title', label:'Título (export plano)', aliases:['title','titulo']},
+  {key:'state', label:'Estado', aliases:['state','estado']},
+  {key:'parent', label:'Padre (ID)', aliases:['parent','parent id','primario','elemento primario','padre','id primario','id del padre','parent work item']},
+  {key:'assigned', label:'Asignado a', aliases:['assigned to','asignado a','asignado','responsable']},
+  {key:'iteration', label:'Iteración / Sprint', aliases:['iteration path','ruta de iteracion','ruta de acceso de iteracion','iteration','iteracion','sprint']},
+  {key:'area', label:'Área', aliases:['area path','ruta de area','ruta de acceso de area','area']},
+  {key:'team', label:'Equipo Principal', aliases:['equipo principal','equipoprincipal','custom equipo principal','custom equipoprincipal','main team','primary team','equipo']},
+  {key:'activity', label:'Actividad (tipo de tarea)', aliases:['activity','actividad','disciplina','discipline']},
+  {key:'order', label:'Orden de backlog', aliases:['backlog priority','stack rank','prioridad del trabajo pendiente','prioridad de trabajo pendiente','prioridad de backlog','orden de backlog']},
+  {key:'process', label:'Proceso (personalizado)', aliases:['proceso','process','custom proceso','custom process','proceso de negocio','business process']},
+  {key:'points', label:'Story points / Esfuerzo', aliases:['story points','puntos de historia','puntos de caso','effort','esfuerzo','size','tamano','puntos']},
+  {key:'original', label:'Estimación original (h)', aliases:['original estimate','estimacion original']},
+  {key:'remaining', label:'Trabajo restante (h)', aliases:['remaining work','trabajo restante','restante']},
+  {key:'completed', label:'Trabajo completado (h)', aliases:['completed work','trabajo completado']},
+  {key:'tags', label:'Etiquetas', aliases:['tags','etiquetas']},
+  {key:'target', label:'Fecha objetivo', aliases:['target date','fecha objetivo','fecha de destino','due date','fecha de vencimiento','finish date','fecha de finalizacion','fecha limite']},
+  {key:'changed', label:'Fecha de cambio', aliases:['changed date','fecha de cambio','fecha de modificacion']},
+  {key:'created', label:'Fecha de creación', aliases:['created date','fecha de creacion']},
+  {key:'priority', label:'Prioridad', aliases:['priority','prioridad']},
+  {key:'blocked', label:'Bloqueado (campo)', aliases:['blocked','bloqueado']}
+];
+const RESOLVED_WORDS = ['resolved','resuelto','resuelta','en revision','review','in review','code review','testing','qa','en pruebas','ready for test','listo para pruebas','validacion','uat'];
+function stateWeight(it) {
+  const st = S.settings;
+  if (it.cat === 'done') return 1;
+  if (it.cat === 'new' || it.cat === 'rem') return (+st.wNew || 0) / 100;
+  return (RESOLVED_WORDS.includes(norm(it.state)) ? +st.wRes : +st.wAct) / 100;
+}
+// avance acumulado: baja hasta las tareas; cada elemento final pesa según su estado
+// y cada padre toma el mayor entre su propio estado y el promedio de su rama
+function weightedRollup(model) {
+  const {items} = model;
+  const calc = it => {
+    const kids = it.children.map(c => items.get(c)).filter(k => k.cat !== 'rem');
+    it.children.forEach(c => { const k = items.get(c); if (k.cat === 'rem') { calc(k); } });
+    const sw = stateWeight(it);
+    if (it.cat === 'rem') { it.wu = 0; it.wp = 0; return; }
+    if (!kids.length) { it.wu = 1; it.wp = sw; return; }
+    let su = 0, sp = 0;
+    kids.forEach(k => { calc(k); su += k.wu; sp += k.wp * k.wu; });
+    it.wu = su; it.wp = it.cat === 'done' ? 1 : Math.max(sw, su ? sp / su : 0);
+  };
+  model.roots.forEach(id => calc(items.get(id)));
+}
+const STATE_WORDS = {
+  done: ['closed','done','completed','cerrado','cerrada','hecho','completado','terminado','finalizado'],
+  rem: ['removed','eliminado','quitado','cut','descartado','cancelado','cancelled','canceled'],
+  new: ['new','proposed','to do','todo','nuevo','nueva','propuesto','por hacer','pendiente','approved','aprobado','design','diseno','backlog'],
+  prog: ['active','committed','in progress','doing','activo','activa','comprometido','en curso','en progreso','resolved','resuelto','en revision','review','in review','testing','qa','en pruebas']
+};
+const CAT_LABEL = {new:'Pendiente', prog:'En curso', done:'Hecho', rem:'Removido'};
+const KIND_LABEL = {epic:'Épicas', feature:'Features', story:'Historias', bug:'Bugs', task:'Tareas', other:'Otros'};
+function catOf(state) { const n = norm(state); if (!n) return 'new'; for (const k of ['done','rem','new','prog']) if (STATE_WORDS[k].includes(n)) return k; return 'prog'; }
+function kindOf(t) {
+  const n = norm(t);
+  if (/^(epic|epica)/.test(n)) return 'epic';
+  if (/^(feature|caracteristica|funcionalidad)/.test(n)) return 'feature';
+  if (/(task|tarea)/.test(n)) return 'task';
+  if (/(bug|error|defect|defecto|incidencia)/.test(n)) return 'bug';
+  if (/(user story|historia|caso de usuario|backlog|requirement|requisito|pbi)/.test(n)) return 'story';
+  return 'other';
+}
+function parseLogical(tags) {
+  let cell = '', sp = null;
+  for (const t of tags) {
+    const n = norm(t); let m = n.match(/^celula\s*[-_#:]?\s*([a-z0-9]+)$/);
+    if (m) { cell = 'Célula ' + m[1].toUpperCase(); continue; }
+    m = n.match(/^(?:sp|sprint)\s*[-_#:]?\s*(\d+)$/); if (m) sp = +m[1];
+  }
+  return {cell, sp};
+}
+const isLogicalTag = t => /^celula\s*[-_#:]?\s*[a-z0-9]+$|^(?:sp|sprint)\s*[-_#:]?\s*\d+$/.test(norm(t));
+const logicalLabel = it => [it.cellEff, it.spEff != null ? 'SP ' + it.spEff : ''].filter(Boolean).join(' · ');
+const KORDER = ['epic','feature','story','bug','task','other'];
+const RANK = {epic:1, feature:2, story:3, bug:3, other:3, task:4};
+
+const CHECKS = [
+  {key:'closedOpen', sev:'crit', title:'Cerrados con hijos abiertos', desc:'Están terminados pero tienen hijos sin terminar. El estado no refleja el avance real.'},
+  {key:'blocked', sev:'crit', title:'Bloqueados', desc:'Etiqueta “Bloqueado” / “Blocked” o el campo Blocked activo.'},
+  {key:'overdue', sev:'crit', title:'Fecha objetivo vencida', desc:'Su fecha objetivo ya pasó y no están terminados.'},
+  {key:'parentNotStarted', sev:'warn', title:'Padre sin iniciar con hijos en marcha', desc:'El padre sigue en estado inicial mientras sus hijos ya avanzan.'},
+  {key:'readyToClose', sev:'warn', title:'Padres listos para cerrar', desc:'Todos sus hijos están terminados (o removidos), pero el padre sigue abierto.'},
+  {key:'stale', sev:'warn', title:'En curso sin cambios recientes', desc:'Elementos en curso cuya fecha de cambio supera el umbral configurado.'},
+  {key:'unassigned', sev:'warn', title:'En curso sin responsable', desc:'Elementos en curso sin “Asignado a”.'},
+  {key:'orphan', sev:'warn', title:'Sin padre', desc:'No cuelgan de ningún nivel superior: quedan fuera de las épicas y features.'},
+  {key:'noTasks', sev:'info', title:'Historias sin tareas', desc:'Historias o PBIs abiertos sin tareas: el trabajo no está desglosado.'},
+  {key:'emptyContainer', sev:'info', title:'Épicas o features vacías', desc:'Épicas o features abiertas que no tienen elementos hijos.'},
+  {key:'noEstimate', sev:'info', title:'Tareas sin estimación', desc:'Tareas abiertas sin trabajo restante ni estimación original.'},
+  {key:'zeroRemaining', sev:'info', title:'En curso con 0 h restantes', desc:'Tareas activas con trabajo restante en cero; probablemente ya terminaron.'},
+  {key:'noProcess', sev:'info', title:'Sin Proceso', desc:'Elementos que no tienen capturado el campo personalizado “Proceso”.'}
+];
+const CHECK = Object.fromEntries(CHECKS.map(c => [c.key, c]));
+const SEV_ORDER = {crit: 0, warn: 1, info: 2};
+const SEV_LABEL = {crit: 'Crítico', warn: 'Atención', info: 'Higiene del backlog'};
+
+/* ---------- estado ---------- */
+function emptyFilters() { return {q:'', type:'', cat:'', who:'', iter:'', area:'', proc:'', team:'', issues:false}; }
+const S = {
+  raw: null, headers: [], rows: [], map: null, model: null,
+  expanded: new Set(), openChecks: new Set(['closedOpen','blocked']),
+  filters: emptyFilters(),
+  lists: [], curList: null, blMode: 'product', blFilter: 'all', blDone: false, blQ: '', blSprint: '', blSrc: '',
+  treeView: store.get('radar.treeView', 'list'), weighted: store.get('radar.weighted', false), packGroup: 'tree', packSize: 'count', packAlerts: true, drawerCtx: null,
+  settings: Object.assign({wNew: 0, wAct: 30, wRes: 90, sprintDays: 14, projRef: 3, projSrc: 'auto', projTeam: 'auto', projUnit: 'count', staleDays: 14, adoUrl: '', dateOrder: 'auto', hierarchy: 'auto'}, store.get('radar.settings', {})),
+  overrides: store.get('radar.map', {}),
+  groupBy: 'iteration', peopleScope: 'auto'
+};
+
+/* ---------- parsing ---------- */
+function parseNum(s) {
+  if (s == null) return null; s = String(s).replace(/\s/g, ''); if (!s) return null;
+  if (s.includes(',') && !s.includes('.')) s = s.replace(',', '.'); else s = s.replace(/,/g, '');
+  const n = parseFloat(s); return isNaN(n) ? null : n;
+}
+function parseId(s) { const m = String(s ?? '').match(/\d+/); return m ? +m[0] : null; }
+function cleanPerson(s) { return String(s || '').replace(/\s*<[^>]*>\s*$/, '').trim(); }
+function detectDateOrder(rows, map) {
+  if (S.settings.dateOrder !== 'auto') return S.settings.dateOrder;
+  let dmy = 0, mdy = 0;
+  for (const k of ['changed','created','target']) {
+    if (!map[k]) continue;
+    for (const r of rows) {
+      const m = String(r[map[k]] || '').match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-]\d{2,4}/);
+      if (!m) continue;
+      if (+m[1] > 12) dmy++; if (+m[2] > 12) mdy++;
+    }
+  }
+  if (dmy > mdy) return 'dmy'; if (mdy > dmy) return 'mdy';
+  return map.spanish ? 'dmy' : 'mdy';
+}
+function parseDate(s, order) {
+  s = String(s || '').trim(); if (!s) return null;
+  let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return new Date(+m[1], +m[2] - 1, +m[3]);
+  m = s.match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{2,4})/);
+  if (m) {
+    let y = +m[3]; if (y < 100) y += 2000;
+    const a = +m[1], b = +m[2];
+    const [d, mo] = order === 'dmy' ? [a, b] : [b, a];
+    const dt = new Date(y, mo - 1, d); return isNaN(dt) ? null : dt;
+  }
+  const dt = new Date(s); return isNaN(dt) ? null : startOfDay(dt);
+}
+function detectMap(headers) {
+  const nh = headers.map(h => [h, norm(h)]);
+  const m = {};
+  for (const f of FIELDS) { const hit = nh.find(([, n]) => f.aliases.includes(n)); m[f.key] = hit ? hit[0] : ''; }
+  m.titleCols = nh.map(([h, n]) => { const x = n.match(/^(title|titulo) (\d+)$/); return x ? [+x[2], h] : null; })
+    .filter(Boolean).sort((a, b) => a[0] - b[0]).map(x => x[1]);
+  m.spanish = nh.some(([, n]) => ['titulo','estado','tipo de elemento de trabajo','asignado a'].includes(n) || /^titulo \d+$/.test(n));
+  for (const [k, h] of Object.entries(S.overrides)) {
+    if (h === '__none') m[k] = ''; else if (headers.includes(h)) m[k] = h;
+  }
+  return m;
+}
+function hierarchyMode(map) {
+  const pref = S.settings.hierarchy;
+  if (pref === 'tree' && map.titleCols.length) return 'tree';
+  if (pref === 'parent' && map.parent) return 'parent';
+  if (pref === 'none') return 'none';
+  if (map.titleCols.length > 1) return 'tree';
+  if (map.parent) return 'parent';
+  if (map.titleCols.length === 1) return 'tree';
+  return 'none';
+}
+
+function buildModel(rows, map) {
+  const mode = hierarchyMode(map);
+  const order = detectDateOrder(rows, map);
+  const items = new Map(); const seq = [];
+  const stack = [];
+  rows.forEach((r, i) => {
+    const g = k => map[k] ? String(r[map[k]] ?? '').trim() : '';
+    let title = '', depth = 0;
+    if (mode === 'tree' || (map.titleCols.length && !map.title)) {
+      for (let d = 0; d < map.titleCols.length; d++) {
+        const v = String(r[map.titleCols[d]] ?? '').trim(); if (v) { title = v; depth = d; break; }
+      }
+    }
+    if (!title) title = g('title');
+    let id = parseId(g('id'));
+    if (!title && id == null) return;
+    if (id == null) id = 'r' + i;
+    if (items.has(id)) { if (mode === 'tree') { stack[depth] = id; stack.length = depth + 1; } return; }
+    const type = g('type') || 'Elemento';
+    const kind = kindOf(type);
+    const tagsRaw = g('tags');
+    const tags = tagsRaw ? tagsRaw.split(/[;,]/).map(t => t.trim()).filter(Boolean) : [];
+    const bf = norm(g('blocked'));
+    const lg = parseLogical(tags);
+    const it = {
+      id, type, kind, rank: RANK[kind], title: title || '(sin título)', state: g('state') || '(sin estado)', cat: catOf(g('state')),
+      assigned: cleanPerson(g('assigned')), iteration: g('iteration'), area: g('area'), process: g('process'), procEff: '',
+      team: g('team'), teamEff: '', activity: g('activity'), order: parseNum(g('order')),
+      cell: lg.cell, sp: lg.sp, cellEff: '', spEff: null, seqIdx: seq.length,
+      points: parseNum(g('points')), original: parseNum(g('original')), remaining: parseNum(g('remaining')), completed: parseNum(g('completed')),
+      tags, priority: g('priority'),
+      target: parseDate(g('target'), order), changed: parseDate(g('changed'), order), created: parseDate(g('created'), order),
+      blocked: tags.some(t => /^(blocked|bloquead[oa])$/.test(norm(t))) || ['yes','si','true','1'].includes(bf),
+      parentId: null, parentMissing: false, children: [], depth: 0, issues: [], r: null
+    };
+    if (mode === 'tree') { it.parentId = depth > 0 ? (stack[depth - 1] ?? null) : null; stack[depth] = id; stack.length = depth + 1; }
+    else if (mode === 'parent') it.parentId = parseId(g('parent'));
+    items.set(id, it); seq.push(id);
+  });
+  const roots = [];
+  for (const id of seq) {
+    const it = items.get(id);
+    if (it.parentId != null && it.parentId !== id && items.has(it.parentId)) items.get(it.parentId).children.push(id);
+    else { if (it.parentId != null && it.parentId !== id) it.parentMissing = true; it.parentId = null; roots.push(id); }
+  }
+  const has = {}; FIELDS.forEach(f => has[f.key] = !!map[f.key]);
+  const model = {items, roots, seq, mode, dateOrder: order, has};
+  // profundidad + ruptura de ciclos
+  const seen = new Set();
+  const visit = (id, d) => { seen.add(id); const it = items.get(id); it.depth = d; it.children = it.children.filter(c => !seen.has(c)); it.children.forEach(c => visit(c, d + 1)); };
+  roots.forEach(id => visit(id, 0));
+  for (const id of seq) if (!seen.has(id)) {
+    const it = items.get(id);
+    if (it.parentId != null) { const p = items.get(it.parentId); p.children = p.children.filter(c => c !== id); }
+    it.parentId = null; roots.push(id); visit(id, 0);
+  }
+  // proceso efectivo: el propio o el heredado del ancestro más cercano
+  // el sprint lógico solo se hereda desde historias/bugs hacia sus tareas
+  const inh = (id, pa) => {
+    const it = items.get(id);
+    it.procEff = it.process || pa.proc || ''; it.teamEff = it.team || pa.team || ''; it.cellEff = it.cell || pa.cell || '';
+    it.spEff = it.sp != null ? it.sp : (pa.sp ?? null);
+    const nx = {proc: it.procEff, team: it.teamEff, cell: it.cellEff, sp: it.rank >= 3 ? it.spEff : null};
+    it.children.forEach(c => inh(c, nx));
+  };
+  roots.forEach(id => inh(id, {}));
+  model.hasLogical = [...items.values()].some(i => i.spEff != null || i.cellEff);
+  runChecks(model); rollup(model); weightedRollup(model);
+  return model;
+}
+
+function runChecks(model) {
+  const {items, has} = model;
+  const hier = model.mode !== 'none';
+  const all = [...items.values()];
+  const minRank = Math.min(...all.map(i => i.rank));
+  const hasTasks = all.some(i => i.kind === 'task');
+  const today = startOfDay(new Date()); const staleMs = S.settings.staleDays * DAY;
+  const res = {}; CHECKS.forEach(c => res[c.key] = []);
+  for (const it of all) {
+    it.issues = [];
+    const c = it.cat, open = c === 'new' || c === 'prog';
+    const kids = it.children.map(k => items.get(k));
+    const add = k => { res[k].push(it.id); it.issues.push(k); };
+    if (c === 'done' && kids.some(k => k.cat === 'new' || k.cat === 'prog')) add('closedOpen');
+    if (open && it.blocked) add('blocked');
+    if (open && it.target && it.target < today) add('overdue');
+    if (c === 'new' && kids.some(k => k.cat === 'prog' || k.cat === 'done')) add('parentNotStarted');
+    if (open && kids.some(k => k.cat === 'done') && kids.every(k => k.cat === 'done' || k.cat === 'rem')) add('readyToClose');
+    if (has.process && c !== 'rem' && !it.process) add('noProcess');
+    if (c === 'prog' && it.changed && (today - it.changed) > staleMs) add('stale');
+    if (has.assigned && c === 'prog' && !it.assigned) add('unassigned');
+    if (hier && open && it.parentId == null && !it.parentMissing && it.rank > minRank) add('orphan');
+    if (hier && hasTasks && open && it.kind === 'story' && kids.length === 0) add('noTasks');
+    if (hier && open && it.rank <= 2 && kids.length === 0) add('emptyContainer');
+    if ((has.remaining || has.original) && open && it.kind === 'task' && it.remaining == null && it.original == null) add('noEstimate');
+    if (has.remaining && c === 'prog' && it.kind === 'task' && it.remaining === 0) add('zeroRemaining');
+  }
+  model.checks = res;
+}
+
+function rollup(model) {
+  const {items} = model;
+  const calc = id => {
+    const it = items.get(id);
+    const r = {leaves: 0, done: 0, remaining: 0, completed: 0, points: 0, desc: 0, issues: 0, cats: {new: 0, prog: 0, done: 0, rem: 0}, kinds: {}};
+    const kids = it.children.filter(k => items.get(k).cat !== 'rem');
+    if (!kids.length) {
+      if (it.cat !== 'rem') { r.leaves = 1; r.done = it.cat === 'done' ? 1 : 0; }
+      if (it.cat === 'new' || it.cat === 'prog') r.remaining = it.remaining || 0;
+      r.completed = it.completed || 0;
+    }
+    if (it.cat !== 'rem') r.points = it.points || 0;
+    for (const k of it.children) {
+      const c = calc(k), kit = items.get(k);
+      r.desc += 1 + c.desc; r.cats[kit.cat]++; r.kinds[kit.kind] = (r.kinds[kit.kind] || 0) + 1;
+      for (const x of Object.keys(c.cats)) r.cats[x] += c.cats[x];
+      for (const x of Object.keys(c.kinds)) r.kinds[x] = (r.kinds[x] || 0) + c.kinds[x];
+      if (kit.cat !== 'rem') { r.leaves += c.leaves; r.done += c.done; r.remaining += c.remaining; r.completed += c.completed; r.points += c.points; }
+      r.issues += c.issues;
+    }
+    r.issues += it.issues.length;
+    it.r = r; return r;
+  };
+  model.roots.forEach(calc);
+}
+
+function summarize(model) {
+  const all = [...model.items.values()];
+  let leaves = 0, done = 0, remaining = 0;
+  model.roots.forEach(id => { const r = model.items.get(id).r; leaves += r.leaves; done += r.done; remaining += r.remaining; });
+  const alertIds = new Set();
+  for (const c of CHECKS) if (c.sev !== 'info') model.checks[c.key].forEach(i => alertIds.add(i));
+  return {
+    total: all.filter(i => i.cat !== 'rem').length, leaves, done, remaining,
+    prog: all.filter(i => i.cat === 'prog').length,
+    blocked: model.checks.blocked.length, alerts: alertIds.size,
+    crit: CHECKS.filter(c => c.sev === 'crit').reduce((a, c) => a + model.checks[c.key].length, 0)
+  };
+}
+
+/* ---------- carga ---------- */
+function loadText(text, name, opts = {}) {
+  text = String(text).replace(/^﻿/, '');
+  const res = Papa.parse(text, {header: true, skipEmptyLines: 'greedy'});
+  const headers = (res.meta.fields || []).filter(h => h && h.trim());
+  if (!headers.length || !res.data.length) { toast('No encontré filas en el archivo. Revisa que sea un CSV exportado de una consulta.'); return false; }
+  const map = detectMap(headers);
+  if (!map.titleCols.length && !map.title) { toast('No encontré una columna de título (Title / Título). Revisa el mapeo en Datos.'); }
+  S.headers = headers; S.rows = res.data; S.map = map;
+  S.raw = {text, name, loadedAt: opts.loadedAt || Date.now(), isSample: !!opts.isSample};
+  S.model = buildModel(S.rows, S.map);
+  if (!S.model.items.size) { toast('El archivo no tiene elementos reconocibles.'); }
+  S.expanded = new Set(S.model.roots.filter(id => S.model.items.get(id).children.length));
+  S.filters = emptyFilters();
+  if (!opts.isSample && !opts.restored) {
+    store.set('radar.last', {text, name, loadedAt: S.raw.loadedAt}) || toast('Archivo cargado. Es demasiado grande para recordarlo en este navegador.');
+    const hist = store.get('radar.history', []);
+    hist.push(Object.assign({t: S.raw.loadedAt, name}, summarize(S.model)));
+    store.set('radar.history', hist.slice(-40));
+  }
+  render();
+  return true;
+}
+function rebuild() { if (!S.rows.length) return; S.model = buildModel(S.rows, S.map); render(); }
+
+function readFile(file) {
+  if (!file) return;
+  const isX = /\.xlsx?$/i.test(file.name);
+  const fr = new FileReader();
+  fr.onerror = () => toast('No pude leer el archivo.');
+  if (isX) {
+    fr.onload = () => withXLSX(() => {
+      try {
+        const wb = XLSX.read(new Uint8Array(fr.result), {type: 'array'});
+        const csv = XLSX.utils.sheet_to_csv(wb.Sheets[wb.SheetNames[0]]);
+        if (loadText(csv, file.name)) { toast(`Cargado: ${file.name}`); go('resumen'); }
+      } catch (e) { toast('No pude interpretar el Excel. Prueba exportando a CSV.'); }
+    });
+    fr.readAsArrayBuffer(file);
+  } else {
+    fr.onload = () => { if (loadText(fr.result, file.name)) { toast(`Cargado: ${file.name}`); go('resumen'); } };
+    fr.readAsText(file, 'utf-8');
+  }
+}
+function withXLSX(cb) {
+  if (window.XLSX) return cb();
+  toast('Preparando lector de Excel…');
+  const s = document.createElement('script');
+  s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+  s.onload = cb; s.onerror = () => toast('No se pudo cargar el lector de Excel. Exporta a CSV.');
+  document.head.appendChild(s);
+}
+
+/* ---------- datos de ejemplo ---------- */
+function sampleCSV() {
+  let seed = 11; const rnd = () => (seed = seed * 16807 % 2147483647) / 2147483647;
+  const pick = a => a[Math.floor(rnd() * a.length)];
+  const people = ['Ana Torres <ana.torres@contoso.mx>','Luis Méndez <luis.mendez@contoso.mx>','Carla Ríos <carla.rios@contoso.mx>','Diego Fuentes <diego.fuentes@contoso.mx>','Sofía Vargas <sofia.vargas@contoso.mx>'];
+  const now = new Date(); now.setHours(10, 20, 0, 0);
+  const ago = n => new Date(now.getTime() - n * DAY);
+  const fd = d => d ? `${d.getMonth()+1}/${d.getDate()}/${d.getFullYear()} ${((d.getHours()+11)%12)+1}:${String(d.getMinutes()).padStart(2,'0')}:00 ${d.getHours()<12?'AM':'PM'}` : '';
+  const SPEC = [
+    ['Autenticación y cuentas', .82, 'Portal\\Seguridad', [
+      ['Inicio de sesión con SSO', ['Login con Azure AD','Login con Google','Cierre de sesión en todos los dispositivos']],
+      ['Recuperación de contraseña', ['Enviar enlace de recuperación','Expiración de enlaces de un solo uso','Bloqueo tras intentos fallidos']],
+      ['Perfil de usuario', ['Editar datos personales','Cambiar foto de perfil','Preferencias de notificación']]]],
+    ['Facturación en línea', .42, 'Portal\\Pagos', [
+      ['Consulta de facturas', ['Listado de facturas con filtros','Descarga de factura en PDF y XML','Búsqueda por folio fiscal']],
+      ['Pagos con tarjeta', ['Integración con pasarela de pagos','Guardar tarjeta tokenizada','Comprobante de pago por correo']],
+      ['Notificaciones de vencimiento', ['Recordatorio 5 días antes','Aviso de factura vencida']],
+      ['Exportación de reportes', []]]],
+    ['Migración de datos legados', .1, 'Portal\\Datos', [
+      ['Extracción desde ERP', ['Mapeo de tablas de clientes','Script de extracción incremental','Conciliación de saldos']],
+      ['Validación y limpieza', ['!Reglas de calidad de datos','Deduplicación de clientes']]]]
+  ];
+  const PROC = {'Inicio de sesión con SSO':'Acceso','Recuperación de contraseña':'Acceso','Perfil de usuario':'Autoservicio','Consulta de facturas':'Cobranza','Pagos con tarjeta':'Cobranza','Notificaciones de vencimiento':'Cobranza','Exportación de reportes':'Reportería','Extracción desde ERP':'Migración','Validación y limpieza':'Migración'};
+  const ACT = n => /^Diseño/.test(n) ? 'Diseño' : /^Desarrollo/.test(n) ? 'Desarrollo' : /^Documentación/.test(n) ? 'Documentación' : 'Pruebas';
+  const closedN = {};
+  const CELL = [1, 2, 1], TEAM = ['Equipo Digital', 'Equipo Digital', 'Equipo Datos'];
+  const TASKS = ['Diseño de UI','Desarrollo frontend','Desarrollo API','Pruebas unitarias','Pruebas de integración','Revisión de seguridad','Documentación técnica'];
+  let nid = 1201; const roots = [];
+  const mk = (type, title, ex = {}) => Object.assign({id: nid++, type, title, children: [], state: 'New', proc: '', assigned: '', iter: '', area: '', pts: '', orig: '', rem: '', comp: '', tags: '', team: '', act: '', target: null, changed: ago(Math.floor(rnd()*7))}, ex);
+  const derive = n => { const k = n.children.filter(c => c.state !== 'Removed'); if (!k.length) return; n.state = k.every(c => c.state === 'Closed') ? 'Closed' : k.some(c => c.state !== 'New') ? 'Active' : 'New'; };
+  const tasks = [];
+  SPEC.forEach(([et, ph, area, feats], ei) => {
+    const e = mk('Epic', et, {area, team: TEAM[ei], assigned: people[ei], target: ago(-(25 + ei * 40))});
+    feats.forEach(([ft, stories], fi) => {
+      const f = mk('Feature', ft, {area, assigned: pick(people), proc: PROC[ft] || '', team: rnd() < .8 ? TEAM[ei] : '', target: ago(-(8 + ei * 30 + fi * 6))});
+      stories.forEach(st => {
+        const noT = st.startsWith('!'); st = st.replace('!', '');
+        const s = mk('User Story', st, {area, assigned: pick(people), proc: rnd() < .85 ? f.proc : '', pts: pick([1,2,3,5,8]), iter: `Portal\\Sprint ${21 + ei + Math.floor(rnd()*2)}`});
+        const n = noT ? 0 : 2 + Math.floor(rnd() * 3);
+        const used = new Set();
+        for (let i = 0; i < n; i++) {
+          let tn = pick(TASKS); while (used.has(tn)) tn = pick(TASKS); used.add(tn);
+          const r = rnd(); const state = rnd() < .03 ? 'Removed' : r < ph ? 'Closed' : r < ph + .3 ? 'Active' : 'New';
+          const orig = pick([2,4,6,8,12,16]);
+          const t = mk('Task', tn, {area, iter: s.iter, act: ACT(tn), assigned: pick(people), state, orig, proc: rnd() < .7 ? (s.proc || f.proc) : ''});
+          if (state === 'Closed') { t.rem = 0; t.comp = orig; t.changed = ago(3 + Math.floor(rnd()*25)); }
+          else if (state === 'Active') { t.rem = Math.max(1, Math.round(orig * (.3 + rnd()*.6))); t.comp = orig - t.rem; }
+          else { t.rem = orig; t.comp = 0; }
+          s.children.push(t); tasks.push({t, s, ei});
+        }
+        if (noT) s.state = 'New'; else derive(s);
+        const sp = s.state === 'Closed' ? 1 + (closedN[CELL[ei]] = (closedN[CELL[ei]] || 0) + 1) % 3 : s.state === 'Active' ? 4 : (rnd() < .35 ? 5 : null);
+        s.tags = [`${rnd() < .5 ? 'Célula' : 'Celula'} ${CELL[ei]}`, sp != null ? (rnd() < .5 ? `SP${sp}` : `SP ${sp}`) : ''].filter(Boolean).join('; ');
+        s.iter = sp != null ? `Portal\\Sprint ${20 + sp}` : 'Portal'; s.children.forEach(t => { t.iter = s.iter; if (sp === 4 && t.state === 'Closed' && rnd() < .7) { const tsp = 1 + Math.floor(rnd() * 3); t.tags = `SP ${tsp}`; t.iter = `Portal\\Sprint ${20 + tsp}`; } });
+        if (s.state === 'Closed') s.changed = ago(4 + Math.floor(rnd()*20));
+        f.children.push(s);
+      });
+      derive(f); if (!stories.length) f.state = 'New';
+      e.children.push(f);
+    });
+    derive(e); roots.push(e);
+  });
+  const active = tasks.filter(x => x.t.state === 'Active').map(x => x.t);
+  const pickActive = () => active.splice(Math.floor(rnd() * active.length), 1)[0];
+  for (let i = 0; i < 4 && active.length; i++) pickActive().changed = ago(18 + Math.floor(rnd()*25));
+  for (let i = 0; i < 3 && active.length; i++) pickActive().tags = 'Bloqueado; Dependencia externa';
+  for (let i = 0; i < 2 && active.length; i++) pickActive().assigned = '';
+  if (active.length) pickActive().rem = 0;
+  const closedStory = tasks.find(x => x.ei === 0 && x.s.state === 'Closed');
+  if (closedStory) { const t = closedStory.t; t.state = 'Active'; t.rem = 3; t.comp = (t.orig || 4) - 3; t.changed = ago(1); }
+  const newT = tasks.find(x => x.t.state === 'New' && x.ei === 2); if (newT) { newT.t.orig = ''; newT.t.rem = ''; newT.t.comp = ''; }
+  const ready = tasks.find(x => x.ei === 0 && x.s.state === 'Closed' && x.s !== closedStory?.s && x.s.children.every(c => c.state === 'Closed' || c.state === 'Removed'));
+  if (ready) ready.s.state = 'Active';
+  const findF = name => roots.flatMap(e => e.children).find(f => f.title === name);
+  const notif = findF('Notificaciones de vencimiento');
+  const s0 = notif.children[0]; s0.state = 'Active'; if (s0.children[0]) { s0.children[0].state = 'Active'; s0.children[0].rem = 4; } notif.state = 'New';
+  const pagos = findF('Pagos con tarjeta'); pagos.target = ago(6); if (pagos.state === 'Closed') pagos.state = 'Active';
+  const bug = mk('Bug', 'Doble cobro al reintentar el pago', {area: 'Portal\\Pagos', assigned: people[3], iter: 'Portal\\Sprint 24', state: 'Active', team: 'Equipo Digital', tags: 'Producción; Bloqueado; Célula 2; SP 4'});
+  bug.children.push(mk('Task', 'Corregir idempotencia en la pasarela', {area: 'Portal\\Pagos', assigned: people[3], iter: 'Portal\\Sprint 24', act: 'Desarrollo', state: 'Active', orig: 8, rem: 5, comp: 3}));
+  pagos.children.push(bug);
+  roots.push(mk('User Story', 'Ajustar textos legales del pie de página', {area: 'Portal', assigned: people[4], iter: 'Portal\\Sprint 24', state: 'Active', pts: 1, tags: 'Célula 2; SP4'}));
+  roots.push(mk('Bug', 'Error 500 al exportar estado de cuenta', {area: 'Portal\\Pagos', iter: 'Portal\\Sprint 24', state: 'New'}));
+  const H = ['ID','Work Item Type','Title 1','Title 2','Title 3','Title 4','State','Assigned To','Iteration Path','Area Path','Story Points','Original Estimate','Remaining Work','Completed Work','Tags','Target Date','Changed Date','Proceso','Equipo Principal','Activity'];
+  const q = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const lines = [H.map(q).join(',')];
+  const emit = (n, d) => {
+    const titles = ['', '', '', '']; titles[d] = n.title;
+    lines.push([n.id, n.type, ...titles, n.state, n.assigned, n.iter, n.area, n.pts, n.orig, n.rem, n.comp, n.tags, fd(n.target), fd(n.changed), n.proc, n.team, n.act].map(q).join(','));
+    n.children.forEach(c => emit(c, d + 1));
+  };
+  roots.forEach(r => emit(r, 0));
+  return lines.join('\r\n');
+}
+
+/* ---------- render: marco ---------- */
+const VIEWS = [['resumen','Resumen'],['jerarquia','Jerarquía'],['backlog','Backlog'],['problemas','Alertas'],['personas','Personas'],['sprints','Sprints y áreas'],['datos','Datos y ayuda']];
+let navView = null;
+const curView = () => { const h = location.hash.slice(1); return VIEWS.some(v => v[0] === h) ? h : (navView || 'resumen'); };
+function go(v) { navView = v; try { if (location.hash !== '#' + v) location.hash = '#' + v; } catch (e) {} render(); window.scrollTo(0, 0); }
+function render() {
+  if (!S.model) return;
+  const sum = summarize(S.model);
+  const v = curView(); S.lastView = v; S.lists = [];
+  $('#tabs').innerHTML = VIEWS.map(([k, l]) => {
+    let c = '';
+    if (k === 'problemas' && sum.alerts) c = `<span class="cnt ${sum.crit ? 'crit' : ''}">${sum.alerts}</span>`;
+    return `<a href="#${k}" data-goto="${k}" ${k === v ? 'aria-current="page"' : ''}>${l}${c}</a>`;
+  }).join('');
+  const r = S.raw;
+  $('#src').innerHTML = r.isSample
+    ? `<span class="tag sample">Ejemplo</span><span class="fname">Portal de Clientes 2.0</span>`
+    : `<span class="fname" title="${esc(r.name)}">${esc(r.name)}</span><span class="tag">${S.model.items.size} elementos · ${fmtDate(new Date(r.loadedAt))}</span>`;
+  const main = $('#main');
+  const notice = r.isSample ? `<div class="notice"><p><b>Estás viendo datos de ejemplo.</b> Exporta una consulta de Azure Boards a CSV y cárgala con el botón o arrastrándola aquí.</p><a class="btn sm" href="#datos">Cómo exportar</a></div>` : '';
+  main.innerHTML = notice + ({resumen: viewSummary, jerarquia: viewTree, backlog: viewBacklog, problemas: viewProblems, personas: viewPeople, sprints: viewSprints, datos: viewData}[v])(sum);
+  if (v === 'jerarquia') refreshTree();
+}
+
+/* ---------- piezas ---------- */
+const ICON_WARN = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5 15 14H1z" fill="currentColor"/><path d="M8 6v3.5M8 11.5v.5" stroke="var(--surface)" stroke-width="1.6" stroke-linecap="round"/></svg>';
+const ICON_CHEV = '<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M4.5 2.5 8 6l-3.5 3.5" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const ICON_BACK = '<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M7.5 2.5 4 6l3.5 3.5" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const ICON_OK = '<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="m3.5 8.5 3 3 6-7" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const ti = it => `<span class="ti k-${it.kind}" title="${esc(it.type)}"></span>`;
+const pill = it => `<span class="pill ${it.cat}">${esc(it.state)}</span>`;
+function sbar(c) {
+  const t = c.new + c.prog + c.done + c.rem; if (!t) return '<div class="sbar"></div>';
+  const tip = ['new','prog','done','rem'].filter(k => c[k]).map(k => `${CAT_LABEL[k]}: ${c[k]}`).join(' · ');
+  return `<div class="sbar" title="${tip}">${['done','prog','new','rem'].map(k => c[k] ? `<i class="c-${k}" style="width:${c[k]/t*100}%"></i>` : '').join('')}</div>`;
+}
+const legend = () => `<div class="legend">${['done','prog','new','rem'].map(k => `<span><i class="c-${k}"></i>${CAT_LABEL[k]}</span>`).join('')}</div>`;
+function flag(it, subtree) {
+  const n = subtree ? it.r.issues : it.issues.length; if (!n) return '';
+  const keys = subtree ? collectIssueKeys(it.id) : it.issues;
+  const sev = keys.reduce((a, k) => SEV_ORDER[CHECK[k].sev] < SEV_ORDER[a] ? CHECK[k].sev : a, 'info');
+  const tip = subtree ? `${n} alertas en esta rama` : it.issues.map(k => CHECK[k].title).join(', ');
+  return `<span class="flag ${sev}" title="${esc(tip)}">${ICON_WARN}${n}</span>`;
+}
+function collectIssueKeys(id) { const out = []; const w = i => { const it = S.model.items.get(i); out.push(...it.issues); it.children.forEach(w); }; w(id); return out; }
+function countCats(list) { const c = {new:0, prog:0, done:0, rem:0}; list.forEach(i => c[i.cat]++); return c; }
+function kidsSummary(r) { return ['feature','story','bug','task','other'].filter(k => r.kinds[k]).map(k => `${r.kinds[k]} ${KIND_LABEL[k].toLowerCase()}`).join(' · '); }
+function adoLink(id) { const b = (S.settings.adoUrl || '').trim().replace(/\/+$/, ''); return b && typeof id === 'number' ? `${b}/_workitems/edit/${id}` : ''; }
+function prevSnapshot() {
+  if (!S.raw || S.raw.isSample) return null;
+  const h = store.get('radar.history', []).filter(x => x.t < S.raw.loadedAt);
+  return h.length ? h[h.length - 1] : null;
+}
+function delta(cur, prev, unit, goodUp) {
+  if (prev == null) return '';
+  const d = Math.round((cur - prev) * 10) / 10;
+  if (!d) return `<span class="d flat">sin cambio</span>`;
+  const good = goodUp ? d > 0 : d < 0;
+  return `<span class="d ${good ? 'up' : 'down'}">${d > 0 ? '+' : ''}${fmt(d)}${unit}</span>`;
+}
+
+/* ---------- vista: resumen ---------- */
+function viewSummary(sum) {
+  const m = S.model, items = m.items;
+  const prev = prevSnapshot();
+  const pc = pct(sum.done, sum.leaves);
+  const prevPc = prev ? pct(prev.done, prev.leaves) : null;
+  const since = prev ? `<span class="s">vs. carga del ${fmtDate(new Date(prev.t))}</span>` : '';
+  const kpis = `<section class="kpis">
+    <div class="kpi"><span class="eyebrow">Avance</span><span class="v">${pc}<small>%</small></span><span class="s">${fmt(sum.done)} de ${fmt(sum.leaves)} elementos finales hechos</span>${delta(pc, prevPc, ' pts', true)}${since}</div>
+    <div class="kpi"><span class="eyebrow">Trabajo restante</span><span class="v">${m.has.remaining ? fmt(sum.remaining) + '<small>h</small>' : '—'}</span><span class="s">${m.has.remaining ? 'en tareas abiertas' : 'Sin columna Remaining Work'}</span>${m.has.remaining ? delta(sum.remaining, prev?.remaining, ' h', false) : ''}</div>
+    <div class="kpi"><span class="eyebrow">En curso</span><span class="v">${fmt(sum.prog)}</span><span class="s">de ${fmt(sum.total)} elementos activos en total</span></div>
+    <button class="kpi ${sum.blocked ? 'crit' : ''}" data-cklist="blocked" type="button"><span class="eyebrow">Bloqueados</span><span class="v">${sum.blocked}</span><span class="s">Ver elementos</span>${delta(sum.blocked, prev?.blocked, '', false)}</button>
+    <button class="kpi ${sum.crit ? 'crit' : sum.alerts ? 'warn' : ''}" data-goto="problemas" type="button"><span class="eyebrow">Elementos con alertas</span><span class="v">${sum.alerts}</span><span class="s">${sum.crit} hallazgos críticos</span>${delta(sum.alerts, prev?.alerts, '', false)}</button>
+  </section>`;
+
+  const tops = m.roots.map(id => items.get(id)).filter(it => it.children.length);
+  const loose = m.roots.map(id => items.get(id)).filter(it => !it.children.length && it.cat !== 'rem');
+  const epics = tops.map(it => {
+    const p = pct(it.r.done, it.r.leaves);
+    return `<div class="erow">
+      <div style="min-width:0">
+        <div class="etitle">${ti(it)}<button class="linkbtn" data-reveal="${it.id}" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(it.title)}</button>${flag(it, true)}</div>
+        <div class="esub"><span>${pill(it)}</span><span>${kidsSummary(it.r)}</span>${m.has.remaining && it.r.remaining ? `<span class="num">${fmt(it.r.remaining)} h restantes</span>` : ''}${it.target ? `<span>Objetivo ${fmtDate(it.target)}</span>` : ''}</div>
+      </div>
+      <div><div class="eprog"><div class="pbar"><i style="width:${p}%"></i></div><b>${p}%</b></div>${sbar(it.r.cats)}</div>
+    </div>`;
+  }).join('');
+  const looseRow = loose.length ? `<div class="erow"><div><div class="etitle"><span class="ti k-other"></span><button class="linkbtn" data-cklist="orphan">${loose.length} elementos sueltos en el nivel superior</button></div><div class="esub"><span>Sin épica ni feature: revisa si deben colgar de alguna.</span></div></div><div>${sbar(countCats(loose))}</div></div>` : '';
+
+  const att = CHECKS.filter(c => m.checks[c.key].length).sort((a, b) => SEV_ORDER[a.sev] - SEV_ORDER[b.sev] || m.checks[b.key].length - m.checks[a.key].length);
+  const attHtml = att.length ? `<ul class="alist">${att.map(c => {
+    const ids = m.checks[c.key], kc = {}; ids.forEach(i => { const k = items.get(i).kind; kc[k] = (kc[k] || 0) + 1; });
+    const sub = (c.key === 'noProcess' || ids.length >= 8) && Object.keys(kc).length > 1;
+    return `<li><button class="arow" data-cklist="${c.key}" type="button"><span class="sev ${c.sev}"></span><span class="at">${checkTitle(c)}</span><span class="ac">${ids.length}</span><span class="chv muted">${ICON_CHEV}</span></button>${sub ? `<div class="subk">${KORDER.filter(k => kc[k]).map(k => `<button type="button" class="chip" data-cklist="${c.key}" data-ckkind="${k}"><span class="ti k-${k}"></span>${KIND_LABEL[k]} <b>${kc[k]}</b></button>`).join('')}</div>` : ''}</li>`;
+  }).join('')}</ul>` : `<div class="empty">Sin alertas. El backlog está consistente.</div>`;
+
+  const byKind = {};
+  for (const it of items.values()) (byKind[it.kind] ||= []).push(it);
+  const kinds = ['epic','feature','story','bug','task','other'].filter(k => byKind[k]);
+  const comp = `<div class="tscroll"><table><thead><tr><th>Tipo</th><th class="n">Total</th><th style="width:40%">Estado</th><th class="n">Pendiente</th><th class="n">En curso</th><th class="n">Hecho</th><th class="n">% hecho</th></tr></thead><tbody>
+    ${kinds.map(k => { const c = countCats(byKind[k]); const act = c.new + c.prog + c.done; const types = [...new Set(byKind[k].map(i => i.type))].join(', ');
+      return `<tr class="click" data-fk="type" data-fv="${k}"><td><span class="tname"><span class="ti k-${k}"></span>${esc(types)}</span></td><td class="n">${byKind[k].length}</td><td>${sbar(c)}</td><td class="n">${c.new}</td><td class="n">${c.prog}</td><td class="n">${c.done}</td><td class="n"><b>${pct(c.done, act)}%</b></td></tr>`; }).join('')}
+  </tbody></table></div>`;
+
+  return `<div class="vhead"><div><h1>Estado del proyecto</h1><p>${m.mode === 'tree' ? 'Jerarquía leída del export en árbol' : m.mode === 'parent' ? 'Jerarquía reconstruida con la columna Padre' : 'Export sin jerarquía: se agrupa solo por tipo'} · ${m.items.size} elementos</p></div>${legend()}</div>
+  ${kpis}
+  <div class="grid2">
+    <section class="panel"><header><h2>Avance por épica</h2><span class="meta">% de elementos finales hechos</span></header><div class="pbody"><div class="elist">${epics || '<div class="empty">No hay elementos con hijos en este export.</div>'}${looseRow}</div></div></section>
+    <section class="panel"><header><h2>Requiere atención</h2><a class="meta" href="#problemas">Ver todas</a></header><div class="pbody">${attHtml}</div></section>
+  </div>
+  <section class="panel"><header><h2>Composición por tipo</h2><span class="meta">Clic en una fila para filtrar la jerarquía</span></header>${comp}</section>`;
+}
+function checkTitle(c) { return c.key === 'stale' ? `En curso sin cambios en ${S.settings.staleDays}+ días` : c.title; }
+
+/* ---------- vista: jerarquía ---------- */
+function optionList(values, cur, all, emptyLabel = '(vacío)') { return `<option value="">${all}</option>` + values.map(v => { const val = v || '__none'; return `<option value="${esc(val)}" ${val === cur ? 'selected' : ''}>${esc(v || emptyLabel)}</option>`; }).join(''); }
+function viewTree() {
+  const m = S.model, f = S.filters, all = [...m.items.values()];
+  const uniq = k => [...new Set(all.map(i => i[k]))].sort((a, b) => (a === '') - (b === '') || String(a).localeCompare(String(b), 'es', {numeric: true}));
+  const kinds = ['epic','feature','story','bug','task','other'].filter(k => all.some(i => i.kind === k));
+  const isMap = S.treeView === 'map';
+  const seg = (attr, cur, opts) => `<div class="seg" role="group">${opts.map(([v, l]) => `<button type="button" data-${attr}="${v}" aria-pressed="${cur === v}">${l}</button>`).join('')}</div>`;
+  const mapCtl = isMap ? `<div class="toolbar packctl">
+      ${m.has.process || m.has.team ? `<span class="ctl"><span class="eyebrow">Agrupar</span>${seg('pgroup', S.packGroup, [['tree','Jerarquía'], ...(m.has.process ? [['process','Proceso']] : []), ...(m.has.team ? [['team','Equipo']] : [])])}</span>` : ''}
+      ${m.has.remaining ? `<span class="ctl"><span class="eyebrow">Tamaño</span>${seg('psize', S.packSize, [['count','Elementos'],['hours','Horas restantes']])}</span>` : ''}
+      <label class="chk"><input type="checkbox" id="palerts" ${S.packAlerts ? 'checked' : ''}> Resaltar alertas</label>
+      <label class="chk" title="Pesos por estado: Pendiente ${S.settings.wNew}%, Activo ${S.settings.wAct}%, Resuelto ${S.settings.wRes}%, Cerrado 100%. Se cambian en Datos y ayuda."><input type="checkbox" id="pweighted" ${S.weighted ? 'checked' : ''}> Avance acumulado</label>
+    </div>` : '';
+  return `<div class="vhead"><div><h1>Jerarquía</h1><p>${isMap ? 'Mapa de círculos: cada círculo contiene a sus hijos. Clic para acercarte, clic en el fondo para alejarte.' : 'Épicas → features → historias → tareas, con avance y alertas acumuladas por rama.'}</p></div>
+    ${seg('tview', S.treeView, [['list','Lista'],['map','Mapa interactivo']])}</div>
+  <div class="toolbar">
+    <input type="search" id="fq" placeholder="Buscar por título, ID, persona o etiqueta" value="${esc(f.q)}" aria-label="Buscar">
+    <select id="ftype" aria-label="Tipo">${`<option value="">Todos los tipos</option>` + kinds.map(k => `<option value="${k}" ${f.type === k ? 'selected' : ''}>${KIND_LABEL[k]}</option>`).join('')}</select>
+    <select id="fcat" aria-label="Estado">${`<option value="">Todos los estados</option>` + ['new','prog','done','rem'].map(k => `<option value="${k}" ${f.cat === k ? 'selected' : ''}>${CAT_LABEL[k]}</option>`).join('')}</select>
+    ${m.has.process ? `<select id="fproc" aria-label="Proceso">${optionList(uniq('procEff'), f.proc, 'Todos los procesos', '(Sin proceso)')}</select>` : ''}
+    ${m.has.team ? `<select id="fteam" aria-label="Equipo Principal">${optionList(uniq('teamEff'), f.team, 'Todos los equipos', '(Sin equipo)')}</select>` : ''}
+    ${m.has.assigned ? `<select id="fwho" aria-label="Persona">${optionList(uniq('assigned'), f.who, 'Todas las personas', '(Sin asignar)')}</select>` : ''}
+    ${m.has.iteration ? `<select id="fiter" aria-label="Iteración">${optionList(uniq('iteration'), f.iter, 'Todas las iteraciones')}</select>` : ''}
+    ${m.has.area ? `<select id="farea" aria-label="Área">${optionList(uniq('area'), f.area, 'Todas las áreas')}</select>` : ''}
+    <label class="chk"><input type="checkbox" id="fiss" ${f.issues ? 'checked' : ''}> Solo con alertas</label>
+  </div>
+  ${mapCtl}
+  <div class="treeinfo"><span id="tinfo"></span><span style="display:flex;gap:4px;align-items:center;flex-wrap:wrap">${isMap ? '' : `<label class="chk" title="Pesos por estado: Pendiente ${S.settings.wNew}%, Activo ${S.settings.wAct}%, Resuelto ${S.settings.wRes}%, Cerrado 100%. Se cambian en Datos y ayuda."><input type="checkbox" id="pweighted" ${S.weighted ? 'checked' : ''}> Avance acumulado</label>`}${isMap ? '' : '<button class="btn ghost sm" id="expAll" type="button">Expandir todo</button><button class="btn ghost sm" id="colAll" type="button">Contraer</button>'}<button class="btn ghost sm" id="clrF" type="button">Limpiar filtros</button></span></div>
+  ${isMap ? `<div class="packwrap"><div class="packbox panel" id="packbox"><svg id="pack" role="img" aria-label="Mapa de círculos del proyecto"></svg>
+      <div class="legend packleg"><span><i class="c-done"></i>Hecho</span><span><i class="c-prog"></i>En curso</span><span><i class="c-new"></i>Pendiente</span><span><i class="ring"></i>${S.weighted ? 'Más verde = más avance acumulado' : 'Contenedor: más verde = más avance'}</span>${S.packAlerts ? '<span><i class="ring crit"></i>Con alertas</span>' : ''}</div></div>
+    <aside class="packside panel" id="packside" aria-live="polite"></aside></div>` : '<div class="tree" id="tree"></div>'}`;
+}
+function refreshTree() { if (S.treeView === 'map') renderPack(); else renderTreeBody(); }
+function filtersActive() { const f = S.filters; return !!(f.q || f.type || f.cat || f.who || f.iter || f.area || f.proc || f.team || f.issues); }
+const fEq = (v, f) => f === '__none' ? !v : v === f;
+function matchItem(it) {
+  const f = S.filters;
+  if (f.type && it.kind !== f.type) return false;
+  if (f.cat && it.cat !== f.cat) return false;
+  if (f.who && !fEq(it.assigned, f.who)) return false;
+  if (f.iter && !fEq(it.iteration, f.iter)) return false;
+  if (f.area && !fEq(it.area, f.area)) return false;
+  if (f.proc && !fEq(it.procEff, f.proc)) return false;
+  if (f.team && !fEq(it.teamEff, f.team)) return false;
+  if (f.issues && !it.issues.length) return false;
+  if (f.q) { const q = norm(f.q); if (!norm(`${it.id} ${it.title} ${it.assigned} ${it.tags.join(' ')} ${it.state} ${it.procEff} ${it.teamEff}`).includes(q)) return false; }
+  return true;
+}
+function rowHTML(it, hasKids, open, isMatch) {
+  const r = it.r, isLeaf = !it.children.length;
+  const p = S.weighted ? Math.round(it.wp * 100) : pct(r.done, r.leaves);
+  const prog = !isLeaf && r.leaves ? `<div class="tprog" title="${S.weighted ? `Estricto: ${r.done} de ${r.leaves} cerrados` : ''}"><div class="pbar"><i style="width:${p}%"></i></div><span>${S.weighted ? p + '%' : `${r.done}/${r.leaves}`}</span></div>` : '';
+  const who = it.assigned ? `<span class="who" title="${esc(it.assigned)}">${esc(it.assigned)}</span>` : `<span class="who none">Sin asignar</span>`;
+  return `<div class="trow r${it.depth + 1} ${isMatch ? '' : 'dim'}" data-row="${it.id}">
+    <div class="tmain" style="--d:${it.depth}">
+      ${hasKids ? `<button class="chev" data-toggle="${it.id}" aria-expanded="${open}" aria-label="${open ? 'Contraer' : 'Expandir'}" type="button">${ICON_CHEV}</button>` : '<span class="chev sp"></span>'}
+      ${ti(it)}<span class="rid">${esc(it.id)}</span>
+      <button class="tt" data-open="${it.id}" type="button" title="${esc(it.title)}">${esc(it.title)}</button>
+      ${!isLeaf ? `<span class="kc">${it.children.length}</span>` : ''}
+      ${open || isLeaf ? flag(it, false) : flag(it, true)}
+    </div>
+    <div class="c-st">${pill(it)}</div>
+    <div class="c-who">${S.model.has.assigned ? who : ''}</div>
+    <div class="c-p">${prog || (isLeaf ? `<span class="pill ${it.cat}" style="font-size:11.5px">${CAT_LABEL[it.cat]}</span>` : '')}</div>
+    <div class="c-h hrs">${S.model.has.remaining && r.remaining ? fmt(r.remaining) + ' h' : ''}</div>
+  </div>`;
+}
+function renderTreeBody() {
+  const m = S.model, items = m.items, active = filtersActive();
+  let show = null, matched = null;
+  if (active) {
+    matched = new Set(); show = new Set();
+    for (const it of items.values()) if (matchItem(it)) {
+      matched.add(it.id); let p = it.id;
+      while (p != null && !show.has(p)) { show.add(p); p = items.get(p).parentId; }
+    }
+  }
+  const LIMIT = 3000; let count = 0, html = '';
+  const walk = id => {
+    if (count >= LIMIT) return;
+    if (show && !show.has(id)) return;
+    const it = items.get(id);
+    const kids = show ? it.children.filter(c => show.has(c)) : it.children;
+    const open = show ? kids.length > 0 : S.expanded.has(id);
+    count++;
+    html += rowHTML(it, kids.length > 0, open, matched ? matched.has(id) : true);
+    if (open) kids.forEach(walk);
+  };
+  m.roots.forEach(walk);
+  const head = `<div class="trow head"><div style="padding-left:30px">Elemento</div><div class="c-st">Estado</div><div class="c-who">${m.has.assigned ? 'Asignado a' : ''}</div><div class="c-p">Avance</div><div class="c-h" style="text-align:right">${m.has.remaining ? 'Restante' : ''}</div></div>`;
+  $('#tree').innerHTML = head + (html || `<div class="empty">Ningún elemento coincide con los filtros.</div>`) + (count >= LIMIT ? `<div class="more">Mostrando los primeros ${LIMIT} elementos. Usa los filtros para acotar.</div>` : '');
+  $('#tinfo').textContent = active ? `${matched.size} coincidencias (en gris, sus padres como contexto)` : `${items.size} elementos · ${m.roots.length} en el nivel superior`;
+}
+function reveal(id) {
+  const items = S.model.items; if (!items.has(id)) return;
+  S.filters = emptyFilters();
+  let p = items.get(id).parentId; while (p != null) { S.expanded.add(p); p = items.get(p).parentId; }
+  S.expanded.add(id);
+  S.treeView = 'list'; store.set('radar.treeView', 'list');
+  closeDrawer();
+  go('jerarquia');
+  setTimeout(() => { const el = document.querySelector(`[data-row="${CSS.escape(String(id))}"]`); if (el) { el.scrollIntoView({block: 'center', behavior: 'smooth'}); el.classList.add('flash'); } }, 60);
+}
+
+/* ---------- mapa interactivo (circle packing con zoom) ---------- */
+let PK = null;
+function packSource() {
+  const m = S.model, items = m.items;
+  let show = null;
+  if (filtersActive()) {
+    show = new Set();
+    for (const it of items.values()) if (matchItem(it)) { let p = it.id; while (p != null && !show.has(p)) { show.add(p); p = items.get(p).parentId; } }
+  }
+  const incl = it => (!show || show.has(it.id)) && (it.cat !== 'rem' || S.filters.cat === 'rem');
+  const GF = {process: ['procEff', '(Sin proceso)'], team: ['teamEff', '(Sin equipo)']}[S.packGroup];
+  const kidsOf = (it, same) => it.children.map(c => items.get(c)).filter(k => incl(k) && (!same || k[same] === it[same]));
+  const nodeOf = (it, same) => ({key: 'i' + it.id, it, name: it.title, children: kidsOf(it, same).map(k => nodeOf(k, same))});
+  let top;
+  if (GF && m.has[S.packGroup]) {
+    const fld = GF[0];
+    const groups = new Map();
+    for (const it of items.values()) {
+      if (!incl(it)) continue;
+      const p = it.parentId != null ? items.get(it.parentId) : null;
+      if (!p || !incl(p) || p[fld] !== it[fld]) { const g = it[fld] || ''; if (!groups.has(g)) groups.set(g, []); groups.get(g).push(nodeOf(it, fld)); }
+    }
+    top = [...groups.entries()].sort((a, b) => (a[0] === '') - (b[0] === '') || a[0].localeCompare(b[0], 'es'))
+      .map(([g, ch]) => ({key: 'g' + g, group: true, name: g || GF[1], children: ch}));
+  } else top = m.roots.map(i => items.get(i)).filter(incl).map(it => nodeOf(it, false));
+  return {key: 'root', name: S.raw.isSample ? 'Portal de Clientes 2.0' : (S.raw.name || 'Proyecto').replace(/\.(csv|xlsx?|tsv|txt)$/i, ''), children: top};
+}
+const progPct = st => S.weighted ? Math.round(st.wp * 100) : pct(st.done, st.leaves);
+const hasRealKids = it => it && it.children.some(c => S.model.items.get(c).cat !== 'rem');
+function nodeStats(d) {
+  const lv = d.leaves().filter(l => l.data.it).map(l => l.data.it);
+  const desc = d.descendants().filter(x => x !== d && x.data.it).map(x => x.data.it);
+  return {
+    leaves: lv.length, done: lv.filter(i => i.cat === 'done').length,
+    rem: lv.reduce((a, i) => a + (hasRealKids(i) ? i.r.remaining : (i.cat === 'new' || i.cat === 'prog') ? i.remaining || 0 : 0), 0),
+    wp: d.data.it ? d.data.it.wp : (d.children ? (s => s.u ? s.p / s.u : 0)(d.children.reduce((a, c) => ({p: a.p + c.st.wp * c.st.wu, u: a.u + c.st.wu}), {p: 0, u: 0})) : 0),
+    wu: d.data.it ? d.data.it.wu : (d.children || []).reduce((a, c) => a + c.st.wu, 0),
+    cats: countCats(desc.length ? desc : lv), alerts: (desc.length ? desc : lv).filter(i => i.issues.length).length + (d.data.it && d.data.it.issues.length ? 1 : 0)
+  };
+}
+function renderPack() {
+  const box = $('#packbox'); if (!box) return;
+  const svgEl = $('#pack');
+  if (!window.d3) { svgEl.outerHTML = '<div class="empty">No se pudo cargar la librería de visualización (D3). Revisa tu conexión y recarga.</div>'; return; }
+  const prevKey = PK ? PK.focus.data.key : null;
+  const data = packSource();
+  const info = $('#tinfo');
+  if (!data.children.length) { d3.select(svgEl).selectAll('*').remove(); svgEl.setAttribute('viewBox', '0 0 10 10'); $('#packside').innerHTML = '<div class="empty">Ningún elemento coincide con los filtros.</div>'; if (info) info.textContent = '0 coincidencias'; PK = null; return; }
+  const W = Math.round(Math.max(280, Math.min((box.clientWidth || 702) - 26, 820)));
+  const h = d3.hierarchy(data, d => d.children && d.children.length ? d.children : null)
+    .sum(d => d.children && d.children.length ? 0 : (S.packSize === 'hours' ? Math.max(d.it && d.it.cat !== 'done' ? d.it.remaining || 0 : 0, 0.4) : 1))
+    .sort((a, b) => b.value - a.value);
+  const root = d3.pack().size([W, W]).padding(d => d.depth === 0 ? 8 : 3)(h);
+  root.eachAfter(d => { d.st = nodeStats(d); });
+  const svg = d3.select(svgEl).attr('viewBox', [-W / 2, -W / 2, W, W]).style('max-width', W + 'px');
+  svg.selectAll('*').remove();
+  const fill = d => {
+    if (d.depth === 0) return 'var(--sunk)';
+    if (d.data.group) return 'color-mix(in srgb, var(--accent) 9%, var(--surface))';
+    if (d.children || (S.weighted && hasRealKids(d.data.it))) return `color-mix(in srgb, var(--s-done) ${Math.round(progPct(d.st) * (d.children ? .5 : .8))}%, var(--surface))`;
+    return `var(--s-${d.data.it ? d.data.it.cat : 'new'})`;
+  };
+  const alert = d => S.packAlerts && d.data.it && d.data.it.issues.length;
+  const stroke = d => alert(d) ? 'var(--crit)' : d.depth === 0 ? 'none' : d.data.group ? 'var(--accent)' : d.children || (S.weighted && hasRealKids(d.data.it)) ? `var(--t-${d.data.it.kind})` : 'var(--surface)';
+  const sw = d => alert(d) ? 2.5 : d.children ? 1.4 : .6;
+  const circle = svg.append('g').selectAll('circle').data(root.descendants()).join('circle')
+    .attr('class', d => d.children ? 'pk-node' : 'pk-leaf')
+    .style('fill', fill).style('stroke', stroke).style('stroke-width', sw)
+    .on('click', (e, d) => {
+      e.stopPropagation();
+      if (d.children) { if (PK.focus !== d) zoom(d); else if (d.parent) zoom(d.parent); }
+      else if (d.data.it) openDrawer(d.data.it.id);
+    });
+  circle.append('title').text(d => {
+    const it = d.data.it, st = d.st;
+    const head = it ? `${it.type} #${it.id} · ${it.state}\n${it.title}` : d.data.name;
+    if (S.weighted && it && !d.children) return `${head}\n${progPct(st)}% de avance acumulado`;
+    return d.children ? `${head}\n${progPct(st)}% ${S.weighted ? 'de avance acumulado' : `hecho (${st.done}/${st.leaves})`}${st.alerts ? `\n${st.alerts} con alertas` : ''}` : head + (it && it.issues.length ? `\nAlertas: ${it.issues.map(k => checkTitle(CHECK[k])).join(', ')}` : '');
+  });
+  const label = svg.append('g').attr('class', 'pk-labels').selectAll('text').data(root.descendants()).join('text');
+  svg.on('click', () => { if (PK && PK.focus.parent) zoom(PK.focus.parent); });
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const zoomTo = v => {
+    const k = W / v[2]; PK.view = v;
+    const tr = d => `translate(${(d.x - v[0]) * k},${(d.y - v[1]) * k})`;
+    circle.attr('transform', tr).attr('r', d => d.r * k);
+    label.attr('transform', tr).each(function (d) {
+      const r = d.r * k, show = d.parent === PK.focus && r > 15;
+      this.style.display = show ? 'inline' : 'none';
+      if (!show) return;
+      const max = Math.floor(r * 2 / 6.6);
+      const nm = d.data.name; this.textContent = nm.length > max ? nm.slice(0, Math.max(1, max - 1)) + '…' : nm;
+    });
+  };
+  const zoom = d => {
+    PK.focus = d; renderPackSide();
+    if (reduce) { zoomTo([d.x, d.y, d.r * 2]); return; }
+    const i = d3.interpolateZoom(PK.view, [d.x, d.y, d.r * 2]);
+    svg.transition().duration(620).tween('zoom', () => t => zoomTo(i(t)));
+  };
+  PK = {root, focus: root, view: null, zoom};
+  const keep = prevKey && root.descendants().find(d => d.data.key === prevKey && d.children);
+  const f0 = keep || root;
+  PK.focus = f0; zoomTo([f0.x, f0.y, f0.r * 2]); renderPackSide();
+  if (info) info.textContent = filtersActive() ? `${root.leaves().length} elementos finales visibles con los filtros` : `${root.descendants().length - 1} elementos en el mapa${S.packGroup !== 'tree' && S.model.has[S.packGroup] ? ` · agrupados por ${S.packGroup === 'team' ? 'Equipo Principal' : 'Proceso'} (los hijos sin valor heredan el de su padre)` : ''}`;
+}
+function packZoomKey(key) { if (!PK) return; const d = PK.root.descendants().find(x => x.data.key === key); if (d) PK.zoom(d); }
+function renderPackSide() {
+  const d = PK.focus, it = d.data.it, st = d.st, m = S.model;
+  const p = progPct(st);
+  const crumbs = d.ancestors().reverse();
+  const kids = (d.children || []).slice().sort((a, b) => b.value - a.value);
+  const LIM = 25;
+  $('#packside').innerHTML = `
+    <div class="crumbs">${crumbs.map((c, i) => i === crumbs.length - 1 ? `<span>${esc(c.data.name)}</span>` : `<button type="button" data-zoom="${esc(c.data.key)}" title="${esc(c.data.name)}">${esc(c.data.name)}</button><span>›</span>`).join('')}</div>
+    <div>
+      <div class="eyebrow" style="display:flex;gap:6px;align-items:center">${it ? `${ti(it)}${esc(it.type)} · #${esc(it.id)}` : d.data.group ? 'Proceso' : 'Proyecto completo'}</div>
+      <h2 class="ps-title">${esc(d.data.name)}</h2>
+      ${it ? `<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:4px">${pill(it)}${it.assigned ? `<span class="who">${esc(it.assigned)}</span>` : ''}${it.procEff && m.has.process ? `<span class="tag">${esc(it.procEff)}</span>` : ''}</div>` : ''}
+    </div>
+    <div>
+      <div class="eprog"><div class="pbar"><i style="width:${p}%"></i></div><b>${p}%</b></div>
+      <p class="hint" style="margin-top:4px">${S.weighted ? `Avance acumulado · estricto: ${pct(st.done, st.leaves)}% (${st.done} de ${st.leaves} cerrados)` : `${st.done} de ${st.leaves} elementos finales hechos`}${m.has.remaining ? ` · ${fmt(st.rem)} h restantes` : ''}</p>
+      ${sbar(st.cats)}
+      ${st.alerts ? `<p class="hint" style="color:var(--crit)">${st.alerts} elementos con alertas en esta rama</p>` : ''}
+    </div>
+    ${it ? `<div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn sm" data-open="${it.id}" type="button">Ver detalle</button><button class="btn ghost sm" data-reveal="${it.id}" type="button">Ver en lista</button></div>` : ''}
+    ${kids.length ? `<div><div class="sec-t">Contiene (${kids.length})</div><div class="kids">${kids.slice(0, LIM).map(k => {
+      const kit = k.data.it, kp = progPct(k.st), showP = k.children || (S.weighted && hasRealKids(kit));
+      return `<div class="kid">${kit ? ti(kit) : '<span class="ti" style="background:var(--accent);border-radius:50%"></span>'}<button class="tt" type="button" ${k.children ? `data-zoom="${esc(k.data.key)}"` : `data-open="${kit.id}"`} title="${esc(k.data.name)}">${esc(k.data.name)}</button>${kit && kit.issues.length && S.packAlerts ? flag(kit, false) : ''}${showP ? `<span class="minip"><span class="pbar"><i style="width:${kp}%"></i></span><span class="num">${kp}%</span></span>` : pill(kit)}</div>`;
+    }).join('')}${kids.length > LIM ? `<div class="kid muted">y ${kids.length - LIM} más</div>` : ''}</div></div>` : ''}`;
+}
+
+/* ---------- vista: alertas ---------- */
+function itemsTable(ids) {
+  const items = S.model.items, m = S.model;
+  const list = ids.map(i => items.get(i));
+  return `<div class="tscroll"><table><thead><tr><th>ID</th><th>Elemento</th><th>Estado</th>${m.has.assigned ? '<th>Asignado a</th>' : ''}${m.has.iteration ? '<th>Iteración</th>' : ''}${m.has.process ? '<th>Proceso</th>' : ''}<th>Padre</th>${m.has.changed ? '<th class="n">Último cambio</th>' : ''}</tr></thead><tbody>
+  ${list.map(it => { const par = it.parentId != null ? items.get(it.parentId) : null;
+    return `<tr class="click" data-open="${it.id}"><td class="mono muted">${esc(it.id)}</td><td><span class="tname" style="font-weight:500;white-space:normal">${ti(it)}${esc(it.title)}</span></td><td>${pill(it)}</td>${m.has.assigned ? `<td>${it.assigned ? esc(it.assigned) : '<span class="muted">Sin asignar</span>'}</td>` : ''}${m.has.iteration ? `<td class="muted">${esc(lastSeg(it.iteration))}</td>` : ''}${m.has.process ? `<td class="muted">${it.process ? esc(it.process) : it.procEff ? `<i>${esc(it.procEff)} (heredado)</i>` : '—'}</td>` : ''}<td class="muted">${par ? esc(par.title) : '—'}</td>${m.has.changed ? `<td class="n muted">${it.changed ? fmtDate(it.changed) : '—'}</td>` : ''}</tr>`; }).join('')}
+  </tbody></table></div>`;
+}
+const lastSeg = p => String(p || '').split('\\').pop() || '—';
+function viewProblems() {
+  const m = S.model;
+  const found = CHECKS.filter(c => m.checks[c.key].length);
+  const clean = CHECKS.filter(c => !m.checks[c.key].length);
+  const groups = ['crit','warn','info'].map(sev => {
+    const cs = found.filter(c => c.sev === sev); if (!cs.length) return '';
+    return `<section class="sevgroup"><h2 class="eyebrow">${SEV_LABEL[sev]}</h2><div class="plist">${cs.map(c => {
+      const open = S.openChecks.has(c.key);
+      return `<div class="pcard ${c.sev} ${open ? 'open' : ''}" id="chk-${c.key}"><button type="button" data-tcheck="${c.key}" aria-expanded="${open}"><span class="sev ${c.sev}"></span><div><h3>${checkTitle(c)}</h3><p>${c.desc}</p></div><span class="pcount">${m.checks[c.key].length}</span><span class="chv">${ICON_CHEV}</span></button>${open ? itemsTable(m.checks[c.key]) : ''}</div>`;
+    }).join('')}</div></section>`;
+  }).join('');
+  return `<div class="vhead"><div><h1>Alertas</h1><p>Reglas de consistencia sobre estados, jerarquía, responsables y fechas. Clic en un elemento para ver su detalle.</p></div></div>
+  ${groups || '<div class="panel empty">Sin alertas. El backlog está consistente.</div>'}
+  ${clean.length ? `<div class="okline"><b>Sin hallazgos:</b>${clean.map(c => `<span>${ICON_OK}${checkTitle(c)}</span>`).join('')}</div>` : ''}`;
+}
+
+/* ---------- vista: personas ---------- */
+function viewPeople() {
+  const m = S.model, all = [...m.items.values()];
+  if (!m.has.assigned) return `<div class="vhead"><div><h1>Personas</h1></div></div><div class="panel empty">El export no incluye la columna “Assigned To / Asignado a”. Agrégala a la consulta para ver la carga por persona.</div>`;
+  const hasTasks = all.some(i => i.kind === 'task');
+  const scope = S.peopleScope === 'auto' ? (hasTasks ? 'tasks' : 'all') : S.peopleScope;
+  const pool = all.filter(i => scope === 'tasks' ? i.kind === 'task' : true);
+  const by = new Map();
+  for (const it of pool) { const k = it.assigned || ''; if (!by.has(k)) by.set(k, []); by.get(k).push(it); }
+  const rows = [...by.entries()].map(([who, list]) => {
+    const c = countCats(list);
+    const rem = list.filter(i => i.cat === 'new' || i.cat === 'prog').reduce((a, i) => a + (i.remaining || 0), 0);
+    const alerts = list.filter(i => i.issues.length).length;
+    return {who, list, c, rem, alerts, blocked: list.filter(i => i.issues.includes('blocked')).length};
+  }).sort((a, b) => b.rem - a.rem || b.c.prog - a.c.prog);
+  const maxRem = Math.max(1, ...rows.map(r => r.rem));
+  return `<div class="vhead"><div><h1>Personas</h1><p>Carga y estado del trabajo por responsable.</p></div>
+    <div class="seg" role="group" aria-label="Alcance"><button type="button" data-scope="tasks" aria-pressed="${scope === 'tasks'}">Solo tareas</button><button type="button" data-scope="all" aria-pressed="${scope === 'all'}">Todos los elementos</button></div></div>
+  <section class="panel"><div class="tscroll"><table><thead><tr><th>Persona</th><th class="n">Pendiente</th><th class="n">En curso</th><th class="n">Hecho</th><th style="width:22%">Estado</th>${m.has.remaining ? '<th class="n">Restante</th><th style="width:16%">Carga restante</th>' : ''}<th class="n">Bloqueados</th><th class="n">Con alertas</th></tr></thead><tbody>
+  ${rows.map(r => `<tr class="click" data-fk="who" data-fv="${esc(r.who || '__none')}"><td><span class="tname">${r.who ? esc(r.who) : '<span class="muted" style="font-style:italic">Sin asignar</span>'}</span></td><td class="n">${r.c.new}</td><td class="n"><b>${r.c.prog}</b></td><td class="n">${r.c.done}</td><td>${sbar(r.c)}</td>${m.has.remaining ? `<td class="n">${fmt(r.rem)} h</td><td><div class="pbar"><i style="width:${r.rem / maxRem * 100}%;background:var(--s-prog)"></i></div></td>` : ''}<td class="n" style="${r.blocked ? 'color:var(--crit);font-weight:700' : ''}">${r.blocked || '·'}</td><td class="n">${r.alerts || '·'}</td></tr>`).join('')}
+  </tbody></table></div></section>
+  <p class="hint">Clic en una persona para ver su trabajo en la jerarquía.</p>`;
+}
+
+/* ---------- vista: sprints / áreas ---------- */
+function sprintGroups(m) {
+  return {iteration: {label: 'Iteración', fk: 'iter', field: 'iteration', on: m.has.iteration, desc: 'ruta de iteración'}, area: {label: 'Área', fk: 'area', field: 'area', on: m.has.area, desc: 'ruta de área'}, process: {label: 'Proceso', fk: 'proc', field: 'procEff', on: m.has.process, desc: 'Proceso (los hijos sin valor heredan el de su padre)'}, team: {label: 'Equipo', fk: 'team', field: 'teamEff', on: m.has.team, desc: 'Equipo Principal (los hijos sin valor heredan el de su padre)'}};
+}
+function sprintTabs(cur) {
+  const GS = sprintGroups(S.model);
+  const opts = Object.entries(GS).filter(([, x]) => x.on).map(([k, x]) => [k, x.label]).concat([['tags', 'Etiquetas'], ['proj', 'Proyección']]);
+  return `<div class="seg" role="group" aria-label="Vista">${opts.map(([k, l]) => `<button type="button" data-group="${k}" aria-pressed="${cur === k}">${l}</button>`).join('')}</div>`;
+}
+function viewSprints() {
+  const m = S.model, all = [...m.items.values()];
+  if (S.groupBy === 'tags') return viewTags();
+  if (S.groupBy === 'proj') return viewProjection();
+  const GS = sprintGroups(m);
+  const g = GS[S.groupBy] && GS[S.groupBy].on ? S.groupBy : ['iteration','area','process','team'].find(k => GS[k].on);
+  const G = g && GS[g];
+  if (!g) return m.hasLogical ? viewTags() : `<div class="vhead"><div><h1>Sprints y áreas</h1></div>${sprintTabs('')}</div><div class="panel empty">El export no incluye “Iteration Path” ni “Area Path”. Agrégalas a la consulta o usa las pestañas Etiquetas y Proyección.</div>`;
+  const by = new Map();
+  for (const it of all) { if (it.rank <= 2) continue; const k = it[G.field] || ''; if (!by.has(k)) by.set(k, []); by.get(k).push(it); }
+  const rows = [...by.entries()].sort((a, b) => (a[0] === '') - (b[0] === '') || a[0].localeCompare(b[0], 'es', {numeric: true}));
+  return `<div class="vhead"><div><h1>Sprints y áreas</h1><p>Historias, bugs y tareas agrupados por ${G.desc}.</p></div>
+    ${sprintTabs(g)}</div>
+  <section class="panel"><div class="tscroll"><table><thead><tr><th>${G.label}</th><th class="n">Elementos</th><th style="width:30%">Estado</th><th class="n">% hecho</th>${m.has.points ? '<th class="n">Puntos</th>' : ''}${m.has.remaining ? '<th class="n">Restante</th>' : ''}<th class="n">Con alertas</th></tr></thead><tbody>
+  ${rows.map(([k, list]) => { const c = countCats(list); const act = c.new + c.prog + c.done;
+    const pts = list.filter(i => i.cat !== 'rem').reduce((a, i) => a + (i.points || 0), 0);
+    const rem = list.filter(i => i.cat === 'new' || i.cat === 'prog').reduce((a, i) => a + (i.remaining || 0), 0);
+    return `<tr class="click" data-fk="${G.fk}" data-fv="${esc(k || '__none')}"><td><span class="tname" title="${esc(k)}">${k ? esc(lastSeg(k)) : `<span class="muted">(sin ${G.label.toLowerCase()})</span>`}</span>${k && k.includes('\\') ? `<div class="muted" style="font-size:11.5px">${esc(k)}</div>` : ''}</td><td class="n">${list.length}</td><td>${sbar(c)}</td><td class="n"><b>${pct(c.done, act)}%</b></td>${m.has.points ? `<td class="n">${fmt(pts)}</td>` : ''}${m.has.remaining ? `<td class="n">${fmt(rem)} h</td>` : ''}<td class="n">${list.filter(i => i.issues.length).length || '·'}</td></tr>`; }).join('')}
+  </tbody></table></div></section><p class="hint">Clic en una fila para ver esos elementos en la jerarquía.</p>`;
+}
+
+/* ---------- vista: etiquetas (sprints lógicos) ---------- */
+const isUnit = (it, items) => it.cat !== 'rem' && it.rank >= 3 && !it.children.some(c => items.get(c).cat !== 'rem');
+function sprintStatus(units) {
+  if (!units.length) return ['plan', 'Planeado'];
+  if (units.every(i => i.cat === 'done')) return ['ok', 'Cerrado'];
+  if (units.some(i => i.cat !== 'new')) return ['prog', 'En curso'];
+  return ['plan', 'Planeado'];
+}
+function viewTags() {
+  const m = S.model, items = m.items, all = [...items.values()];
+  const head = `<div class="vhead"><div><h1>Sprints y áreas</h1><p>Sprints lógicos armados con etiquetas: “Célula N” + “SP N” forman el sprint N de esa célula. Las tareas heredan las etiquetas de su historia.</p></div>${sprintTabs('tags')}</div>`;
+  const pool = all.filter(i => i.cat !== 'rem' && i.rank >= 3);
+  const other = new Map();
+  for (const it of all) for (const t of it.tags) if (!isLogicalTag(t)) other.set(t, (other.get(t) || 0) + 1);
+  const otherHtml = other.size ? `<section class="panel"><header><h2>Otras etiquetas</h2><span class="meta">Clic para buscarlas en la jerarquía</span></header><div class="pbody" style="padding-top:12px"><div class="chips">${[...other.entries()].sort((a, b) => b[1] - a[1]).map(([t, n]) => `<button type="button" class="chip" data-fk="q" data-fv="${esc(t)}">${esc(t)} <b>${n}</b></button>`).join('')}</div></div></section>` : '';
+  if (!m.hasLogical) return head + `<div class="panel empty">No encontré etiquetas de sprint lógico. Agrega etiquetas como <code>Célula 1</code> y <code>SP 3</code> (o <code>SP3</code>) a tus historias para verlas aquí.</div>` + otherHtml;
+  const cells = new Map();
+  for (const it of pool) { if (!it.cellEff && it.spEff == null) continue; const c = it.cellEff || ''; if (!cells.has(c)) cells.set(c, new Map()); const g = cells.get(c), k = it.spEff ?? 'none'; if (!g.has(k)) g.set(k, []); g.get(k).push(it); }
+  const sections = [...cells.entries()].sort((a, b) => (a[0] === '') - (b[0] === '') || a[0].localeCompare(b[0], 'es', {numeric: true})).map(([cell, sps]) => {
+    const cellName = cell || 'Sin célula';
+    const rows = [...sps.entries()].sort((a, b) => (a[0] === 'none') - (b[0] === 'none') || a[0] - b[0]);
+    const allUnits = rows.flatMap(([, l]) => l).filter(i => isUnit(i, items));
+    const body = rows.map(([sp, list]) => {
+      const units = list.filter(i => isUnit(i, items));
+      const done = units.filter(i => i.cat === 'done').length;
+      const pbis = list.filter(i => i.rank === 3), tasks = list.filter(i => i.kind === 'task');
+      const [stc, stl] = sp === 'none' ? ['plan', 'Sin sprint'] : sprintStatus(units);
+      const pts = pbis.reduce((a, i) => a + (i.points || 0), 0);
+      const rem = units.filter(i => i.cat !== 'done').reduce((a, i) => a + (i.remaining || 0), 0);
+      const title = sp === 'none' ? `${cellName} · sin SP` : `${cellName} · SP ${sp}`;
+      const li = regList({title, eyebrow: 'Sprint lógico', desc: sp === 'none' ? 'Elementos de la célula que aún no tienen etiqueta de sprint.' : `Elementos con las etiquetas “${esc(cellName)}” y “SP ${sp}”, más las tareas que las heredan.`, ids: list.map(i => i.id)});
+      return `<tr class="click" data-list="${li}"><td><span class="tname">${sp === 'none' ? '<span class="muted">Sin SP</span>' : `SP ${sp}`}</span></td><td><span class="stag ${stc}">${stl}</span></td><td class="n">${pbis.length}</td><td class="n">${tasks.length ? `${tasks.filter(i => i.cat === 'done').length}/${tasks.length}` : '·'}</td><td>${sbar(countCats(list))}</td><td class="n"><b>${pct(done, units.length)}%</b></td>${m.has.points ? `<td class="n">${fmt(pts)}</td>` : ''}${m.has.remaining ? `<td class="n">${fmt(rem)} h</td>` : ''}<td class="n">${list.filter(i => i.issues.length).length || '·'}</td></tr>`;
+    }).join('');
+    const nsp = rows.filter(([k]) => k !== 'none').length;
+    return `<section class="panel"><header><h2>${esc(cellName)}</h2><span class="meta">${nsp} sprints · ${pct(allUnits.filter(i => i.cat === 'done').length, allUnits.length)}% hecho</span></header><div class="tscroll"><table><thead><tr><th>Sprint</th><th>Estado</th><th class="n">Historias y bugs</th><th class="n">Tareas hechas</th><th style="width:24%">Avance</th><th class="n">% hecho</th>${m.has.points ? '<th class="n">Puntos</th>' : ''}${m.has.remaining ? '<th class="n">Restante</th>' : ''}<th class="n">Con alertas</th></tr></thead><tbody>${body}</tbody></table></div></section>`;
+  }).join('');
+  const untagged = pool.filter(i => !i.cellEff && i.spEff == null && i.rank === 3);
+  const ul = untagged.length ? regList({title: 'Sin etiquetas de célula ni sprint', eyebrow: 'Etiquetas', desc: 'Historias y bugs que no tienen “Célula N” ni “SP N”.', ids: untagged.map(i => i.id)}) : null;
+  return head + `<div class="stack">${sections}${ul != null ? `<button class="panel notag" data-list="${ul}" type="button"><span><b>${untagged.length}</b> historias y bugs sin etiquetas de célula ni sprint</span><span class="chv muted">${ICON_CHEV}</span></button>` : ''}${otherHtml}</div><p class="hint">Clic en un sprint para ver sus elementos.</p>`;
+}
+
+/* ---------- vista: proyección ---------- */
+const iterNum = p => { const l = lastSeg(p); const m = p && l.match(/(\d+)(?!.*\d)/); return m ? +m[1] : null; };
+function projOptions(m) {
+  const st = S.settings, items = m.items;
+  const leaves = [...items.values()].filter(i => isUnit(i, items));
+  const srcs = [];
+  if (leaves.some(i => i.spEff != null)) srcs.push('tags');
+  if (m.has.iteration && leaves.some(i => iterNum(i.iteration) != null)) srcs.push('iter');
+  if (m.has.changed) srcs.push('dates');
+  const teams = [];
+  if (leaves.some(i => i.cellEff)) teams.push('cell');
+  if (m.has.team) teams.push('team');
+  teams.push('none');
+  return {
+    leaves, srcs, teams,
+    src: srcs.includes(st.projSrc) ? st.projSrc : srcs[0] || null,
+    team: teams.includes(st.projTeam) ? st.projTeam : teams[0],
+    unit: st.projUnit === 'hours' && (m.has.remaining || m.has.original) ? 'hours' : 'count',
+    days: +st.sprintDays || 14, ref: +st.projRef || 3
+  };
+}
+function themeOf(it, items) {
+  let p = it.parentId, feat = null, epic = null; const par = p != null ? items.get(p) : null;
+  while (p != null) { const a = items.get(p); if (a.kind === 'feature' && !feat) feat = a; if (a.kind === 'epic' && !epic) epic = a; p = a.parentId; }
+  return feat || epic || par || it;
+}
+function computeProjection(m, P) {
+  const items = m.items, leaves = P.leaves;
+  const hasTasks = leaves.some(i => i.kind === 'task');
+  const broken = [...items.values()].filter(i => i.kind === 'story' && i.cat !== 'rem' && i.r && i.r.leaves && i.children.length);
+  const storyAvg = broken.length ? broken.reduce((a, i) => a + i.r.leaves, 0) / broken.length : 3;
+  const unbroken = i => hasTasks && i.kind === 'story';
+  const w = i => unbroken(i) ? storyAvg : 1;
+  const hd = leaves.filter(i => i.cat === 'done').map(i => i.completed || i.original).filter(v => v > 0);
+  const avgH = hd.length ? hd.reduce((a, b) => a + b, 0) / hd.length : 6;
+  const val = (i, open) => {
+    if (P.unit !== 'hours') return w(i);
+    const v = open ? (i.remaining ?? i.original) : (i.completed || i.original);
+    return v != null ? v : avgH * w(i);
+  };
+  const today = startOfDay(new Date()), len = P.days * DAY;
+  let t0 = null;
+  if (P.src === 'dates') { const ds = leaves.filter(i => i.cat === 'done' && i.changed).map(i => +i.changed); if (ds.length) t0 = Math.min(...ds); }
+  const curWin = t0 != null ? Math.floor((today - t0) / len) + 1 : null;
+  const numOf = i => P.src === 'tags' ? (i.spEff ?? null) : P.src === 'iter' ? iterNum(i.iteration) : (i.cat === 'done' && i.changed && t0 != null ? Math.floor((i.changed - t0) / len) + 1 : null);
+  const teamOf = i => P.team === 'cell' ? i.cellEff : P.team === 'team' ? i.teamEff : '__all';
+  const typeOf = i => m.has.activity && i.activity ? i.activity : unbroken(i) ? 'Historias sin tareas' : i.type;
+  const byLane = new Map();
+  for (const i of leaves) { const k = teamOf(i) || ''; if (!byLane.has(k)) byLane.set(k, []); byLane.get(k).push(i); }
+  const lanes = [];
+  for (const [key, list] of byLane) {
+    const hist = new Map(), nums = new Set();
+    for (const i of list) {
+      const n = numOf(i); if (n == null) continue; nums.add(n);
+      if (i.cat === 'done') { const h = hist.get(n) || {v: 0, types: {}}; const v = val(i, false), t = typeOf(i); h.v += v; h.types[t] = (h.types[t] || 0) + v; hist.set(n, h); }
+    }
+    const open = list.filter(i => i.cat === 'new' || i.cat === 'prog');
+    if (!open.length && !hist.size) continue;
+    let current;
+    if (P.src === 'dates') { current = curWin; if (curWin != null) for (let n = 1; n < curWin; n++) nums.add(n); }
+    else { const pn = list.filter(i => i.cat === 'prog').map(numOf).filter(n => n != null); current = pn.length ? Math.max(...pn) : nums.size ? Math.max(...nums) : null; }
+    let past = [...nums].filter(n => current == null || n < current).sort((a, b) => a - b);
+    if (!past.length) past = [...hist.keys()].sort((a, b) => a - b);
+    const ref = past.slice(-P.ref), rv = ref.map(n => hist.get(n)?.v || 0);
+    const vel = rv.length ? rv.reduce((a, b) => a + b, 0) / rv.length : 0;
+    const sd = rv.length > 1 ? Math.sqrt(rv.reduce((a, b) => a + (b - vel) ** 2, 0) / (rv.length - 1)) : null;
+    const label = key === '__all' ? 'Todo el proyecto' : key || (P.team === 'cell' ? 'Sin célula' : 'Sin equipo');
+    lanes.push({key, label, list, open, hist, nums, current, past, ref, rv, vel, sd, doneInCur: current != null ? hist.get(current)?.v || 0 : 0});
+  }
+  const withVel = lanes.filter(l => l.vel > 0);
+  const fbVel = withVel.length ? withVel.reduce((a, l) => a + l.vel, 0) / withVel.length : 0;
+  for (const l of lanes) {
+    l.fallback = !(l.vel > 0); if (l.fallback) l.vel = fbVel;
+    const cv = l.sd != null && l.vel ? l.sd / l.vel : 1;
+    l.conf = l.fallback ? 'Baja' : l.ref.length >= 3 && cv < .35 ? 'Alta' : l.ref.length >= 2 && cv < .6 ? 'Media' : 'Baja';
+    l.remaining = l.open.reduce((a, i) => a + val(i, true), 0);
+    // tipos de trabajo
+    const types = new Map();
+    for (const n of l.ref) for (const [t, v] of Object.entries(l.hist.get(n)?.types || {})) { const x = types.get(t) || {done: 0, open: 0}; x.done += v; types.set(t, x); }
+    for (const i of l.open) { const t = typeOf(i), x = types.get(t) || {done: 0, open: 0}; x.open += val(i, true); types.set(t, x); }
+    l.types = [...types.entries()].map(([t, x]) => ({t, vel: l.ref.length ? x.done / l.ref.length : 0, open: x.open})).map(x => ({...x, need: x.vel ? x.open / x.vel : (x.open ? Infinity : 0)})).sort((a, b) => b.open - a.open);
+    planLane(l, P, items, numOf, val, today, len);
+  }
+  lanes.sort((a, b) => (a.key === '') - (b.key === '') || a.label.localeCompare(b.label, 'es', {numeric: true}));
+  return {lanes, hasTasks, storyAvg, avgH};
+}
+function planLane(l, P, items, numOf, val, today, len) {
+  l.sprints = [];
+  if (!l.vel || !l.open.length) { l.end = null; return; }
+  const cur = l.current;
+  const k1 = i => { const n = P.src === 'dates' ? null : numOf(i); return n == null ? Infinity : cur != null ? Math.max(n, cur) : n; };
+  const pr = i => i.order ?? (parseNum(i.priority) ?? Infinity);
+  const sorted = l.open.slice().sort((a, b) => (k1(a) - k1(b)) || (pr(a) - pr(b)) || (a.seqIdx - b.seqIdx));
+  const maxKnown = l.nums.size ? Math.max(...l.nums) : 0;
+  let s = {num: cur != null ? cur : maxKnown + 1, cap: cur != null ? Math.max(l.vel - l.doneInCur, l.vel * .25) : l.vel, load: 0, items: [], cur: cur != null};
+  for (const i of sorted) {
+    const v = val(i, true), want = k1(i);
+    while ((s.items.length && s.load + v > s.cap * 1.05) || (want !== Infinity && want > s.num)) {
+      l.sprints.push(s); s = {num: s.num + 1, cap: l.vel, load: 0, items: [], cur: false};
+      if (l.sprints.length > 80) break;
+    }
+    if (l.sprints.length > 80) { l.truncated = true; break; }
+    s.items.push(i); s.load += v;
+  }
+  if (s.items.length && !l.truncated) l.sprints.push(s);
+  let t = +today;
+  l.sprints.forEach((sp, idx) => {
+    t += (idx === 0 && sp.cur ? Math.min(1, sp.cap / l.vel) : 1) * len; sp.end = new Date(t);
+    const th = new Map();
+    for (const i of sp.items) { const T = themeOf(i, items); const x = th.get(T.id) || {it: T, v: 0}; x.v += val(i, true); th.set(T.id, x); }
+    sp.themes = [...th.values()].sort((a, b) => b.v - a.v);
+  });
+  l.end = l.sprints.length ? l.sprints[l.sprints.length - 1].end : null;
+}
+function histSvg(l, unitLbl) {
+  const nums = l.past.slice(-8);
+  const bars = nums.map(n => ({n, v: l.hist.get(n)?.v || 0, ref: l.ref.includes(n), cur: false}));
+  if (l.current != null && !nums.includes(l.current)) bars.push({n: l.current, v: l.doneInCur, cur: true});
+  if (!bars.length) return `<div class="empty" style="padding:16px">Sin sprints con trabajo terminado.</div>`;
+  const max = Math.max(l.vel || 0, ...bars.map(b => b.v), 1);
+  const W = 40 + bars.length * 36, H = 128, base = 100, hgt = 72;
+  const y = v => base - v / max * hgt;
+  const avg = l.fallback ? '' : `<line class="hl" x1="22" x2="${W - 4}" y1="${y(l.vel)}" y2="${y(l.vel)}"/><text x="${W - 4}" y="${y(l.vel) - 5}" text-anchor="end" class="hv">prom. ${fmt(l.vel)}</text>`;
+  return `<svg class="hist" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="Trabajo terminado por sprint (${unitLbl})">
+    <line x1="22" x2="${W - 4}" y1="${base}" y2="${base}" class="hx"/>
+    ${bars.map((b, i) => { const x = 28 + i * 36, h = Math.max(b.v / max * hgt, b.v ? 2 : 0);
+      return `<rect class="hb ${b.cur ? 'cur' : b.ref ? 'ref' : ''}" x="${x}" y="${base - h}" width="24" height="${h}" rx="2"><title>${b.cur ? 'En curso' : 'Sprint ' + b.n}: ${fmt(b.v)} ${unitLbl}</title></rect>
+      <text x="${x + 12}" y="${base - h - 4}" text-anchor="middle" class="hv">${fmt(Math.round(b.v * 10) / 10)}</text>
+      <text x="${x + 12}" y="${base + 14}" text-anchor="middle">${b.cur ? 'actual' : b.n}</text>`; }).join('')}
+    ${avg}</svg>`;
+}
+function viewProjection() {
+  const m = S.model, items = m.items;
+  const P = projOptions(m);
+  const head = `<div class="vhead"><div><h1>Sprints y áreas</h1><p>Proyección de los sprints restantes con base en el trabajo terminado en sprints anteriores.</p></div>${sprintTabs('proj')}</div>`;
+  if (!P.src) return head + `<div class="panel empty">Para proyectar necesito saber en qué sprint se terminó cada elemento: etiquetas “SP N”, rutas de iteración numeradas o la columna Changed Date.</div>`;
+  const R = computeProjection(m, P);
+  const unitLbl = P.unit === 'hours' ? 'h' : R.hasTasks ? 'tareas' : 'elementos';
+  const seg = (key, cur, opts) => `<div class="seg" role="group">${opts.map(([v, l]) => `<button type="button" data-sset="${key}" data-val="${v}" aria-pressed="${cur === v}">${l}</button>`).join('')}</div>`;
+  const SRC = {tags: 'Etiquetas SP', iter: 'Iteración', dates: 'Fecha de cierre'}, TEAM = {cell: 'Célula', team: 'Equipo Principal', none: 'Todo el proyecto'};
+  const ctl = `<div class="toolbar packctl">
+    <span class="ctl"><span class="eyebrow">Sprints desde</span>${seg('projSrc', P.src, P.srcs.map(k => [k, SRC[k]]))}</span>
+    <span class="ctl"><span class="eyebrow">Equipos por</span>${seg('projTeam', P.team, P.teams.map(k => [k, TEAM[k]]))}</span>
+    ${m.has.remaining || m.has.original ? `<span class="ctl"><span class="eyebrow">Medir en</span>${seg('projUnit', P.unit, [['count', 'Tareas'], ['hours', 'Horas']])}</span>` : ''}
+    <label class="ctl" for="pj-days"><span class="eyebrow">Días por sprint</span><input id="pj-days" type="number" min="1" max="60" value="${P.days}"></label>
+    <label class="ctl" for="pj-ref"><span class="eyebrow">Sprints de referencia</span><input id="pj-ref" type="number" min="1" max="12" value="${P.ref}"></label>
+  </div>`;
+  const lanes = R.lanes.filter(l => l.open.length);
+  if (!lanes.length) return head + ctl + `<div class="panel empty">No hay trabajo abierto que proyectar.</div>`;
+  if (!lanes.some(l => l.vel > 0)) return head + ctl + `<div class="panel empty">Todavía no hay sprints con trabajo terminado para calcular una velocidad. Prueba con otra fuente de sprints.</div>`;
+  const maxS = Math.max(...lanes.map(l => l.sprints.length));
+  const end = lanes.reduce((a, l) => l.end && (!a || l.end > a) ? l.end : a, null);
+  const totRem = lanes.reduce((a, l) => a + l.remaining, 0), totVel = lanes.reduce((a, l) => a + l.vel, 0);
+  const longest = lanes.reduce((a, l) => l.sprints.length > a.sprints.length ? l : a, lanes[0]); const conf = longest.conf;
+  const spName = (sp, idx, l) => l.current == null && !l.nums.size ? `Sprint +${idx + 1}` : P.src === 'tags' ? `SP ${sp.num}` : P.src === 'iter' ? `Sprint ${sp.num}` : (sp.cur ? 'Periodo actual' : `Periodo +${idx + (lanes[0].sprints[0]?.cur ? 0 : 1)}`);
+  const kpis = `<section class="kpis">
+    <div class="kpi"><span class="eyebrow">Sprints restantes</span><span class="v">${maxS}</span><span class="s">${lanes.length > 1 ? 'del equipo con más trabajo; los equipos avanzan en paralelo' : 'incluye el sprint actual'}</span></div>
+    <div class="kpi"><span class="eyebrow">Fin estimado</span><span class="v" style="font-size:22px">${end ? fmtDate(end) : '—'}</span><span class="s">con sprints de ${P.days} días</span></div>
+    <div class="kpi"><span class="eyebrow">Trabajo pendiente</span><span class="v">${fmt(Math.round(totRem))}<small>${P.unit === 'hours' ? 'h' : ''}</small></span><span class="s">${P.unit === 'hours' ? 'horas estimadas' : unitLbl + ' equivalentes'}</span></div>
+    <div class="kpi"><span class="eyebrow">Velocidad combinada</span><span class="v">${fmt(Math.round(totVel * 10) / 10)}</span><span class="s">${unitLbl} por sprint</span></div>
+    <div class="kpi"><span class="eyebrow">Confianza</span><span class="v conf ${conf}" style="font-size:22px">${conf}</span><span class="s">de ${esc(longest.label)}, el equipo que termina al último</span></div>
+  </section>`;
+  const laneHtml = lanes.map(l => {
+    const cards = l.sprints.map((sp, idx) => {
+      const top = sp.themes[0], sec = sp.themes[1];
+      const name = spName(sp, idx, l);
+      const li = regList({title: `${l.label} · ${name}`, eyebrow: sp.cur ? 'Sprint en curso' : 'Sprint proyectado', desc: `Trabajo que cabría en este sprint con una velocidad de ${fmt(l.vel)} ${unitLbl} por sprint. Tema principal: ${top ? esc(top.it.title) : '—'}.`, ids: sp.items.map(i => i.id),
+        extra: sp.themes.length ? `<div><div class="sec-t">Temas que abarca</div><div class="kids">${sp.themes.slice(0, 8).map(x => `<div class="kid">${ti(x.it)}<button class="tt" data-open="${x.it.id}" type="button">${esc(x.it.title)}</button><span class="num muted">${fmt(Math.round(x.v * 10) / 10)} ${unitLbl}</span></div>`).join('')}</div></div>` : ''});
+      const fill = Math.min(100, Math.round(sp.load / (sp.cap || 1) * 100));
+      return `<button type="button" class="spcard ${sp.cur ? 'cur' : ''}" data-list="${li}">
+        <span class="sphead"><span class="eyebrow">${name}</span><span class="stag ${sp.cur ? 'prog' : 'plan'}">${sp.cur ? 'En curso' : 'Proyectado'}</span></span>
+        <span class="sptitle">${top ? esc(top.it.title) : 'Sin trabajo asignado'}</span>
+        <span class="spsub">${sec ? `+ ${esc(sec.it.title)}${sp.themes.length > 2 ? ` y ${sp.themes.length - 2} más` : ''}` : '&nbsp;'}</span>
+        <span class="pbar" title="${fill}% de la capacidad"><i style="width:${fill}%;background:var(--s-prog)"></i></span>
+        <span class="spmeta"><span>${fmt(Math.round(sp.load * 10) / 10)} ${unitLbl} · ${sp.items.length} elem.</span><span>≈ ${sp.end.toLocaleDateString('es', {day: 'numeric', month: 'short'})}</span></span>
+      </button>`;
+    }).join('');
+    const bott = l.types.filter(x => x.need > l.sprints.length + .5);
+    const typeRows = l.types.map(x => `<tr><td>${esc(x.t)}</td><td class="n">${fmt(Math.round(x.vel * 10) / 10)}</td><td class="n">${fmt(Math.round(x.open * 10) / 10)}</td><td class="n ${x.need > l.sprints.length + .5 ? 'warnc' : ''}">${x.need === Infinity ? 'sin historial' : fmt(Math.ceil(x.need * 10) / 10)}</td></tr>`).join('');
+    return `<section class="panel lane"><header><h2>${esc(l.label)}</h2><span class="meta">${l.sprints.length} sprint${l.sprints.length === 1 ? '' : 's'} · ${fmt(Math.round(l.vel * 10) / 10)} ${unitLbl}/sprint · confianza <b class="conf ${l.conf}">${l.conf}</b>${l.end ? ` · fin ≈ ${fmtDate(l.end)}` : ''}</span></header>
+      <div class="lbody">
+        <div class="lhist"><div class="sec-t">Terminado por sprint</div>${histSvg(l, unitLbl)}
+          ${l.fallback ? `<p class="hint">Sin historial propio: uso la velocidad promedio de los demás equipos.</p>` : `<p class="hint">Promedio de ${l.ref.length} sprint${l.ref.length > 1 ? 's' : ''} de referencia${l.current != null ? `; el sprint actual ya lleva ${fmt(Math.round(l.doneInCur * 10) / 10)} ${unitLbl}` : ''}.</p>`}</div>
+        <div style="min-width:0"><div class="sec-t">Sprints proyectados · clic para ver qué incluye cada uno</div><div class="spscroll"><div class="sprow">${cards}</div></div>
+          ${l.truncated ? '<p class="hint">La proyección se cortó en 80 sprints.</p>' : ''}
+          <details class="types" ${bott.length ? 'open' : ''}><summary>Por tipo de trabajo${bott.length ? ` · <span class="warnc">${bott.map(x => esc(x.t)).join(', ')} va más lento que el resto</span>` : ''}</summary>
+            <div class="tscroll"><table><thead><tr><th>Tipo</th><th class="n">Terminado por sprint</th><th class="n">Pendiente</th><th class="n">Sprints a su ritmo</th></tr></thead><tbody>${typeRows}</tbody></table></div></details>
+        </div>
+      </div></section>`;
+  }).join('');
+  return head + ctl + kpis + `<div class="stack">${laneHtml}</div>
+  <p class="hint">Cómo se calcula: cada tarea abierta cuenta como una unidad${R.hasTasks ? ` y cada historia sin tareas como ${fmt(Math.round(R.storyAvg * 10) / 10)} (el promedio de tareas por historia)` : ''}. La velocidad es el promedio de lo terminado en los últimos ${P.ref} sprints antes del actual. El trabajo se reparte en orden: primero lo que ya está en el sprint actual o en sprints planeados, después el resto según el orden del backlog. Cada sprint toma el nombre del feature con más trabajo dentro de él.</p>`;
+}
+
+/* ---------- vista: backlog ---------- */
+function blSources(m) {
+  const s = [];
+  if ([...m.items.values()].some(i => i.rank >= 3 && i.spEff != null)) s.push('tags');
+  if (m.has.iteration) s.push('iter');
+  return s;
+}
+const spKey = (it, src) => src === 'tags' ? (it.spEff != null ? `${it.cellEff}|${it.spEff}` : '') : (it.iteration || '');
+function spLabel(key, src) {
+  if (!key) return '';
+  if (src === 'tags') { const [c, n] = key.split('|'); return `${c ? c + ' · ' : ''}SP ${n}`; }
+  return lastSeg(key);
+}
+const initials = n => String(n || '').split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0].toUpperCase()).join('') || '—';
+function viewBacklog() {
+  const m = S.model;
+  const srcs = blSources(m); const src = srcs.includes(S.blSrc) ? S.blSrc : srcs[0] || '';
+  const seg = (key, cur, opts) => `<div class="seg" role="group">${opts.map(([v, l]) => `<button type="button" data-st="${key}" data-val="${v}" aria-pressed="${cur === v}">${l}</button>`).join('')}</div>`;
+  const head = `<div class="vhead"><div><h1>Backlog</h1><p>${S.blMode === 'sprint' ? 'Tablero del sprint: historias y bugs con sus tareas por estado.' : 'Historias y bugs en el orden del backlog, con su feature, sprint y avance de tareas.'}</p></div>${seg('blMode', S.blMode, [['product', 'Product Backlog'], ['sprint', 'Sprint Backlog']])}</div>`;
+  return head + (S.blMode === 'sprint' ? sprintBacklog(m, srcs, src, seg) : productBacklog(m, src));
+}
+function productBacklog(m, src) {
+  const items = m.items;
+  const q = norm(S.blQ);
+  let list = [...items.values()].filter(i => i.rank === 3 && i.cat !== 'rem' && (S.blDone || i.cat !== 'done'));
+  const planned = list.filter(i => spKey(i, src)).length;
+  if (S.blFilter === 'unplanned') list = list.filter(i => !spKey(i, src));
+  if (S.blFilter === 'planned') list = list.filter(i => spKey(i, src));
+  if (q) list = list.filter(i => norm(`${i.id} ${i.title} ${i.assigned} ${i.tags.join(' ')} ${i.procEff} ${i.teamEff}`).includes(q));
+  const pr = i => i.order ?? (parseNum(i.priority) ?? Infinity);
+  list.sort((a, b) => (pr(a) - pr(b)) || (a.seqIdx - b.seqIdx));
+  const featOf = i => { let p = i.parentId; while (p != null) { const a = items.get(p); if (a.kind === 'feature' || a.kind === 'epic') return a; p = a.parentId; } return null; };
+  const pts = list.reduce((a, i) => a + (i.points || 0), 0);
+  const LIM = 600;
+  const chip = (v, l, n) => `<button type="button" class="chip ${S.blFilter === v ? 'on' : ''}" data-st="blFilter" data-val="${v}">${l}${n != null ? ` <b>${n}</b>` : ''}</button>`;
+  const tot = [...items.values()].filter(i => i.rank === 3 && i.cat !== 'rem' && (S.blDone || i.cat !== 'done')).length;
+  return `<div class="toolbar">
+    <input type="search" id="blq" placeholder="Buscar en el backlog" value="${esc(S.blQ)}" aria-label="Buscar en el backlog">
+    <div class="chips">${chip('all', 'Todos', tot)}${src ? chip('planned', 'En un sprint', planned) + chip('unplanned', 'Sin sprint', tot - planned) : ''}</div>
+    <label class="chk"><input type="checkbox" id="bl-done" ${S.blDone ? 'checked' : ''}> Incluir terminados</label>
+  </div>
+  <div class="treeinfo"><span>${list.length} elementos${m.has.points ? ` · ${fmt(pts)} puntos` : ''}${m.has.order ? ' · ordenados por Backlog Priority' : m.has.priority ? ' · ordenados por prioridad' : ' · en el orden del export'}</span>${legend()}</div>
+  <section class="panel"><div class="tscroll"><table><thead><tr><th class="n">#</th><th>Elemento</th><th>Feature / épica</th><th>Estado</th>${m.has.points ? '<th class="n">Puntos</th>' : ''}${src ? '<th>Sprint</th>' : ''}${m.has.team ? '<th>Equipo</th>' : ''}${m.has.process ? '<th>Proceso</th>' : ''}<th style="min-width:120px">Tareas</th></tr></thead><tbody>
+  ${list.slice(0, LIM).map((i, n) => { const f = featOf(i); const r = i.r; const tk = i.children.map(c => items.get(c)).filter(k => k.cat !== 'rem'); const td = tk.filter(k => k.cat === 'done').length; const sk = spKey(i, src);
+    return `<tr class="click" data-open="${i.id}"><td class="n muted">${n + 1}</td><td><span class="tname" style="white-space:normal;font-weight:500">${ti(i)}<span class="rid">${esc(i.id)}</span>${esc(i.title)}${flag(i, false)}</span></td><td class="muted" style="max-width:220px">${f ? esc(f.title) : '—'}</td><td>${pill(i)}</td>${m.has.points ? `<td class="n">${i.points != null ? fmt(i.points) : '·'}</td>` : ''}${src ? `<td>${sk ? esc(spLabel(sk, src)) : '<span class="muted">Sin sprint</span>'}</td>` : ''}${m.has.team ? `<td class="muted">${esc(i.teamEff || '—')}</td>` : ''}${m.has.process ? `<td class="muted">${esc(i.procEff || '—')}</td>` : ''}<td>${tk.length ? `<span class="minip" style="width:110px"><span class="pbar"><i style="width:${pct(td, tk.length)}%"></i></span><span class="num">${td}/${tk.length}</span></span>` : '<span class="muted">Sin tareas</span>'}</td></tr>`; }).join('')}
+  </tbody></table></div>${list.length ? '' : '<div class="empty">Ningún elemento coincide.</div>'}</section>
+  ${list.length > LIM ? `<p class="hint">Mostrando los primeros ${LIM}. Usa la búsqueda para acotar.</p>` : ''}`;
+}
+function sprintBacklog(m, srcs, src, seg) {
+  const items = m.items;
+  if (!src) return `<div class="panel empty">Para ver el Sprint Backlog necesito la ruta de iteración o etiquetas “SP N” en el export.</div>`;
+  const pool = [...items.values()].filter(i => i.rank >= 3 && i.cat !== 'rem');
+  const keys = new Map();
+  for (const i of pool) { const k = spKey(i, src); if (!k) continue; const x = keys.get(k) || {n: 0, prog: 0}; x.n++; if (i.cat === 'prog') x.prog++; keys.set(k, x); }
+  const sorted = [...keys.keys()].sort((a, b) => a.localeCompare(b, 'es', {numeric: true}));
+  if (!sorted.length) return `<div class="panel empty">Ningún elemento tiene sprint asignado.</div>`;
+  let key = sorted.includes(S.blSprint) ? S.blSprint : '';
+  if (!key) { key = sorted.slice().sort((a, b) => keys.get(b).prog - keys.get(a).prog || b.localeCompare(a, 'es', {numeric: true}))[0]; S.blSprint = key; }
+  const inSp = pool.filter(i => spKey(i, src) === key);
+  const pbis = inSp.filter(i => i.rank === 3).sort((a, b) => a.seqIdx - b.seqIdx);
+  const pbiIds = new Set(pbis.map(i => i.id));
+  const tasksOf = p => p.children.map(c => items.get(c)).filter(k => k.cat !== 'rem');
+  const looseTasks = inSp.filter(i => i.rank === 4 && !pbiIds.has(i.parentId));
+  const allTasks = pbis.flatMap(tasksOf).concat(looseTasks);
+  const units = pbis.flatMap(p => { const t = tasksOf(p); return t.length ? t : [p]; }).concat(looseTasks);
+  const done = units.filter(i => i.cat === 'done').length;
+  const rem = allTasks.filter(i => i.cat !== 'done').reduce((a, i) => a + (i.remaining || 0), 0);
+  const ptsT = pbis.reduce((a, i) => a + (i.points || 0), 0), ptsD = pbis.filter(i => i.cat === 'done').reduce((a, i) => a + (i.points || 0), 0);
+  const card = t => `<button type="button" class="tcard" data-open="${t.id}"><span class="tct">${esc(t.title)}</span><span class="tcm"><span class="av" title="${esc(t.assigned || 'Sin asignar')}">${esc(initials(t.assigned))}</span>${m.has.activity && t.activity ? `<span>${esc(t.activity)}</span>` : ''}${t.cat !== 'done' && t.remaining != null ? `<span class="num">${fmt(t.remaining)} h</span>` : ''}${flag(t, false)}</span></button>`;
+  const COLS = [['new', 'Pendiente'], ['prog', 'En curso'], ['done', 'Hecho']];
+  const row = (head, tasks, self) => `<div class="bs">${head}</div>${COLS.map(([c, l]) => { const ts = tasks.filter(t => t.cat === c); const sc = self && self.cat === c ? card(self) : ''; return `<div data-col="${l}" class="${ts.length || sc ? '' : 'ec'}">${ts.map(card).join('')}${sc}</div>`; }).join('')}`;
+  const rows = pbis.map(p => { const ts = tasksOf(p), td = ts.filter(t => t.cat === 'done').length;
+    return row(`<div class="bst">${ti(p)}<button class="tt" data-open="${p.id}" type="button" title="${esc(p.title)}">${esc(p.title)}</button></div><div class="bsm">${pill(p)}${p.points != null ? `<span class="num">${fmt(p.points)} pts</span>` : ''}${flag(p, false)}</div>${ts.length ? `<span class="minip" style="width:100%"><span class="pbar"><i style="width:${pct(td, ts.length)}%"></i></span><span class="num">${td}/${ts.length}</span></span>` : '<span class="hint" style="margin:0">Sin tareas</span>'}`, ts, ts.length ? null : p);
+  }).join('') + (looseTasks.length ? row(`<div class="bst"><b>Tareas sueltas del sprint</b></div><span class="hint" style="margin:0">Su historia está en otro sprint</span>`, looseTasks) : '');
+  const people = new Map();
+  for (const t of allTasks) { if (t.cat === 'done') continue; const k = t.assigned || ''; const x = people.get(k) || {n: 0, h: 0}; x.n++; x.h += t.remaining || 0; people.set(k, x); }
+  const pmax = Math.max(1, ...[...people.values()].map(x => m.has.remaining ? x.h : x.n));
+  return `<div class="toolbar">
+    ${srcs.length > 1 ? `<span class="ctl"><span class="eyebrow">Sprints desde</span>${seg('blSrc', src, srcs.map(s => [s, s === 'tags' ? 'Etiquetas' : 'Iteración']))}</span>` : ''}
+    <label class="ctl" for="bl-sprint"><span class="eyebrow">Sprint</span><select id="bl-sprint">${sorted.map(k => `<option value="${esc(k)}" ${k === key ? 'selected' : ''}>${esc(spLabel(k, src))} (${keys.get(k).n})</option>`).join('')}</select></label>
+  </div>
+  <section class="kpis">
+    <div class="kpi"><span class="eyebrow">Avance</span><span class="v">${pct(done, units.length)}<small>%</small></span><span class="s">${done} de ${units.length} elementos finales</span></div>
+    <div class="kpi"><span class="eyebrow">Historias y bugs</span><span class="v">${pbis.filter(i => i.cat === 'done').length}<small>/${pbis.length}</small></span><span class="s">terminados</span></div>
+    <div class="kpi"><span class="eyebrow">Tareas</span><span class="v">${allTasks.filter(i => i.cat === 'done').length}<small>/${allTasks.length}</small></span><span class="s">terminadas</span></div>
+    <div class="kpi"><span class="eyebrow">Puntos</span><span class="v">${m.has.points ? fmt(ptsD) + `<small>/${fmt(ptsT)}</small>` : '—'}</span><span class="s">${m.has.points ? 'de historias terminadas' : 'Sin columna Story Points'}</span></div>
+    <div class="kpi"><span class="eyebrow">Restante</span><span class="v">${m.has.remaining ? fmt(rem) + '<small>h</small>' : '—'}</span><span class="s">en tareas abiertas</span></div>
+  </section>
+  <div class="boardwrap"><div class="board" aria-label="Tablero del sprint"><div class="bh bs">Historia / bug</div>${COLS.map(([c, l]) => `<div class="bh"><span class="pill ${c}">${l}</span></div>`).join('')}${rows || '<div class="bs empty" style="grid-column:1/-1">Este sprint no tiene historias ni bugs.</div>'}</div></div>
+  ${people.size ? `<section class="panel"><header><h2>Carga abierta por persona</h2><span class="meta">Tareas sin terminar en este sprint</span></header><div class="tscroll"><table><thead><tr><th>Persona</th><th class="n">Tareas abiertas</th>${m.has.remaining ? '<th class="n">Restante</th>' : ''}<th style="width:40%"></th></tr></thead><tbody>${[...people.entries()].sort((a, b) => b[1].h - a[1].h || b[1].n - a[1].n).map(([p, x]) => `<tr><td>${p ? esc(p) : '<span class="muted">Sin asignar</span>'}</td><td class="n">${x.n}</td>${m.has.remaining ? `<td class="n">${fmt(x.h)} h</td>` : ''}<td><div class="pbar"><i style="width:${(m.has.remaining ? x.h : x.n) / pmax * 100}%;background:var(--s-prog)"></i></div></td></tr>`).join('')}</tbody></table></div></section>` : ''}`;
+}
+
+/* ---------- vista: datos y ayuda ---------- */
+function viewData() {
+  const m = S.model, map = S.map;
+  const sel = f => `<label class="field" for="map-${f.key}">${f.label}<select id="map-${f.key}" data-map="${f.key}" class="${map[f.key] ? '' : 'miss'}"><option value="__none">(no usar)</option>${S.headers.map(h => `<option ${map[f.key] === h ? 'selected' : ''}>${esc(h)}</option>`).join('')}</select></label>`;
+  const hist = store.get('radar.history', []).slice().reverse();
+  const modeTxt = {tree: `Árbol: niveles leídos de ${map.titleCols.map(esc).join(', ')}`, parent: `Plano: padres leídos de “${esc(map.parent)}”`, none: 'Sin jerarquía (no hay columnas Title N ni Padre)'}[m.mode];
+  return `<div class="vhead"><div><h1>Datos y ayuda</h1><p>Cómo preparar el export, cómo se interpretó el archivo y tus preferencias.</p></div></div>
+  <div class="stack">
+  <section class="panel"><header><h2>Cómo exportar desde Azure DevOps</h2><span class="meta">Recomendado: consulta en árbol</span></header><div class="pbody" style="padding-top:12px">
+    <ol class="steps">
+      <li>En <b>Boards → Queries</b> crea una consulta nueva y en <b>Type of query</b> elige <b>Tree of work items</b> (Árbol de elementos de trabajo), con tipo de árbol <b>Parent/Child</b>.</li>
+      <li>En los filtros de nivel superior deja <code>Team Project = @Project</code> y, si quieres, <code>Work Item Type In Epic, Feature</code>. En los filtros de elementos vinculados no pongas restricción de tipo para traer historias, bugs y tareas.</li>
+      <li>En <b>Column options</b> agrega: ID, Work Item Type, Title, State, Assigned To, Iteration Path, Area Path, Story Points (o Effort), Original Estimate, Remaining Work, Completed Work, Tags, Target Date, Changed Date, Activity y tus campos personalizados como <b>Proceso</b> y <b>Equipo Principal</b>.</li>
+      <li>Para los sprints lógicos usa etiquetas como <code>Célula 1</code> y <code>SP 3</code> (con o sin espacio) en las historias; sus tareas las heredan.</li>
+      <li>Ejecuta la consulta, expande todo y usa <b>⋯ → Export to CSV</b>. El CSV trae columnas <code>Title 1</code>, <code>Title 2</code>… que indican el nivel de cada elemento.</li>
+      <li>Carga el archivo aquí. La próxima vez usa la misma consulta guardada para que las cargas sean comparables.</li>
+    </ol>
+    <p class="hint">También funciona una consulta plana (Flat list) si agregas la columna <b>Parent</b>, y archivos de Excel. Funciona con Azure DevOps en español o inglés. El archivo se procesa solo en tu navegador.</p>
+  </div></section>
+
+  <section class="panel"><header><h2>Archivo actual y mapeo de columnas</h2><span class="meta">${esc(S.raw.isSample ? 'Datos de ejemplo' : S.raw.name)} · ${S.rows.length} filas</span></header><div class="pbody" style="padding-top:12px">
+    <p style="margin:0 0 8px"><b>Jerarquía:</b> ${modeTxt}. <b>Fechas:</b> ${m.dateOrder === 'dmy' ? 'día/mes/año' : 'mes/día/año'}.</p>
+    <div class="mapgrid">
+      ${FIELDS.map(sel).join('')}
+      <label class="field" for="set-hier">Modo de jerarquía<select id="set-hier"><option value="auto">Automático</option><option value="tree" ${S.settings.hierarchy === 'tree' ? 'selected' : ''}>Árbol (Title 1, Title 2…)</option><option value="parent" ${S.settings.hierarchy === 'parent' ? 'selected' : ''}>Columna Padre</option><option value="none" ${S.settings.hierarchy === 'none' ? 'selected' : ''}>Sin jerarquía</option></select></label>
+      <label class="field" for="set-date">Formato de fecha<select id="set-date"><option value="auto">Automático</option><option value="dmy" ${S.settings.dateOrder === 'dmy' ? 'selected' : ''}>Día/mes/año</option><option value="mdy" ${S.settings.dateOrder === 'mdy' ? 'selected' : ''}>Mes/día/año</option></select></label>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap"><button class="btn primary" id="applyMap" type="button">Aplicar mapeo</button><button class="btn ghost" id="resetMap" type="button">Volver a detección automática</button></div>
+    <p class="hint">El mapeo que elijas se recuerda para las próximas cargas con las mismas columnas.</p>
+  </div></section>
+
+  <section class="panel"><header><h2>Preferencias</h2></header><div class="pbody" style="padding-top:12px">
+    <div class="mapgrid">
+      <label class="field" for="set-wnew">Avance acumulado · peso de Pendiente/New (%)<input id="set-wnew" type="number" min="0" max="100" value="${S.settings.wNew}"></label>
+      <label class="field" for="set-wact">Peso de Activo/En curso (%)<input id="set-wact" type="number" min="0" max="100" value="${S.settings.wAct}"></label>
+      <label class="field" for="set-wres">Peso de Resuelto/En revisión (%)<input id="set-wres" type="number" min="0" max="100" value="${S.settings.wRes}"></label>
+      <label class="field" for="set-stale">Días sin cambios para “sin actualizar”<input id="set-stale" type="number" min="1" max="365" value="${S.settings.staleDays}"></label>
+      <label class="field" for="set-ado" style="grid-column:span 2">URL del proyecto en Azure DevOps (para abrir elementos)<input id="set-ado" type="url" placeholder="https://dev.azure.com/mi-organizacion/MiProyecto" value="${esc(S.settings.adoUrl)}"></label>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap"><button class="btn primary" id="saveSet" type="button">Guardar preferencias</button>${!S.raw.isSample ? '' : ''}<button class="btn ghost" id="loadSample" type="button">Ver datos de ejemplo</button></div>
+  </div></section>
+
+  <section class="panel"><header><h2>Historial de cargas</h2><span class="meta">Se guarda en este navegador para comparar avances</span></header>
+    ${hist.length ? `<div class="tscroll"><table><thead><tr><th>Fecha de carga</th><th>Archivo</th><th class="n">Elementos</th><th class="n">Avance</th><th class="n">Restante</th><th class="n">Bloqueados</th><th class="n">Con alertas</th></tr></thead><tbody>${hist.map(h => `<tr><td class="num">${new Date(h.t).toLocaleString('es', {dateStyle: 'medium', timeStyle: 'short'})}</td><td>${esc(h.name)}</td><td class="n">${h.total}</td><td class="n"><b>${pct(h.done, h.leaves)}%</b></td><td class="n">${fmt(h.remaining)} h</td><td class="n">${h.blocked}</td><td class="n">${h.alerts}</td></tr>`).join('')}</tbody></table></div>
+    <div class="pbody" style="padding-top:10px"><button class="btn ghost sm" id="clrHist" type="button">Borrar historial y último archivo</button></div>` : `<div class="empty">Todavía no has cargado archivos propios. Cada carga queda aquí con su avance, horas restantes y alertas.</div>`}
+  </section>
+  </div>`;
+}
+
+/* ---------- drawer ---------- */
+function openDrawer(id, ctx) {
+  const items = S.model.items, it = items.get(id); if (!it) return;
+  const m = S.model, r = it.r;
+  const crumbs = []; let p = it.parentId; while (p != null) { crumbs.unshift(items.get(p)); p = items.get(p).parentId; }
+  const link = adoLink(it.id);
+  const dl = [
+    ['Tipo', esc(it.type)], ['Estado', pill(it)],
+    m.has.assigned && ['Asignado a', it.assigned ? esc(it.assigned) : '<span class="muted">Sin asignar</span>'],
+    m.has.iteration && ['Iteración', esc(it.iteration || '—')], m.has.area && ['Área', esc(it.area || '—')],
+    m.has.process && ['Proceso', it.process ? esc(it.process) : it.procEff ? `<span class="muted">Sin valor propio · hereda “${esc(it.procEff)}”</span>` : '<span class="muted">Sin proceso</span>'],
+    m.has.team && ['Equipo Principal', it.team ? esc(it.team) : it.teamEff ? `<span class="muted">Sin valor propio · hereda “${esc(it.teamEff)}”</span>` : '<span class="muted">Sin equipo</span>'],
+    (it.cellEff || it.spEff != null) && ['Sprint lógico', esc(logicalLabel(it)) + (it.cell || it.sp != null ? '' : ' <span class="muted">(heredado)</span>')],
+    m.has.activity && it.activity && ['Actividad', esc(it.activity)],
+    m.has.points && it.points != null && ['Puntos', fmt(it.points)],
+    m.has.original && it.original != null && ['Estimación original', fmt(it.original) + ' h'],
+    m.has.remaining && it.remaining != null && ['Trabajo restante', fmt(it.remaining) + ' h'],
+    m.has.completed && it.completed != null && ['Trabajo completado', fmt(it.completed) + ' h'],
+    m.has.priority && it.priority && ['Prioridad', esc(it.priority)],
+    m.has.target && ['Fecha objetivo', fmtDate(it.target)],
+    m.has.changed && ['Último cambio', it.changed ? `${fmtDate(it.changed)} <span class="muted">(hace ${Math.max(0, Math.round((startOfDay(new Date()) - it.changed) / DAY))} días)</span>` : '—'],
+    m.has.created && it.created && ['Creado', fmtDate(it.created)],
+    it.tags.length && ['Etiquetas', it.tags.map(t => `<span class="tag">${esc(t)}</span>`).join(' ')]
+  ].filter(Boolean);
+  const kids = it.children.map(k => items.get(k));
+  const pr = pct(r.done, r.leaves);
+  S.drawerCtx = ctx || null;
+  $('#drawer').innerHTML = `${ctx ? `<button class="backbar" id="dback" type="button">${ICON_BACK} Volver a “${esc(ctx.label)}”</button>` : ''}<div class="dhead">${ti(it)}<span class="kc">${esc(it.type)}</span><span class="rid">#${esc(it.id)}</span><span style="flex:1"></span>
+      ${link ? `<a class="btn sm" href="${esc(link)}" target="_blank" rel="noopener">Abrir en Azure DevOps</a>` : ''}
+      <button class="btn ghost sm" data-reveal="${it.id}" type="button">Ver en jerarquía</button>
+      <button class="chev" id="dclose" aria-label="Cerrar" type="button" style="width:30px;height:30px"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="m3 3 8 8M11 3l-8 8" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></button></div>
+    <div class="dbody">
+      ${crumbs.length ? `<div class="crumbs">${crumbs.map(c => `<button data-open="${c.id}" type="button" title="${esc(c.title)}">${esc(c.title)}</button><span>›</span>`).join('')}</div>` : (it.parentMissing ? '<div class="crumbs">Su padre no viene en este export</div>' : '')}
+      <h2>${esc(it.title)}</h2>
+      ${it.issues.length ? `<div class="ibox">${it.issues.map(k => `<div><span class="sev ${CHECK[k].sev}"></span><span><b>${checkTitle(CHECK[k])}.</b> ${CHECK[k].desc}</span></div>`).join('')}</div>` : ''}
+      <dl class="dl">${dl.map(([a, b]) => `<dt>${a}</dt><dd>${b}</dd>`).join('')}</dl>
+      ${kids.length ? `<div><div class="sec-t">Rama completa</div>
+        <div class="eprog" style="margin-bottom:6px"><div class="pbar"><i style="width:${pr}%"></i></div><b>${pr}%</b></div>
+        ${sbar(r.cats)}
+        <p class="hint">${r.done} de ${r.leaves} elementos finales hechos · ${kidsSummary(r)}${m.has.remaining ? ` · ${fmt(r.remaining)} h restantes` : ''}${r.issues ? ` · ${r.issues} alertas en la rama` : ''}</p></div>
+        <div><div class="sec-t">Hijos directos (${kids.length})</div><div class="kids">${kids.map(k => `<div class="kid">${ti(k)}<button class="tt" data-open="${k.id}" type="button">${esc(k.title)}</button>${flag(k, false)}${pill(k)}</div>`).join('')}</div></div>` : ''}
+    </div>`;
+  $('#drawer').hidden = false; $('#scrim').hidden = false;
+  $('#dclose').focus();
+}
+function closeDrawer() { $('#drawer').hidden = true; $('#scrim').hidden = true; S.drawerCtx = null; }
+function openCheckDrawer(key, kind = '') {
+  const c = CHECK[key]; if (!c) return;
+  openListDrawer({title: checkTitle(c), desc: c.desc, ids: S.model.checks[key], sev: c.sev, check: key}, kind);
+}
+function regList(spec) { S.lists.push(spec); return S.lists.length - 1; }
+function openListDrawer(spec, kind = '') {
+  const m = S.model, items = m.items;
+  const all = spec.ids.map(i => items.get(i)).filter(Boolean);
+  const kc = {}; all.forEach(i => kc[i.kind] = (kc[i.kind] || 0) + 1);
+  if (kind && !kc[kind]) kind = '';
+  const list = kind ? all.filter(i => i.kind === kind) : all;
+  S.curList = spec;
+  S.drawerCtx = {label: spec.title + (kind ? ` · ${KIND_LABEL[kind]}` : ''), reopen: () => openListDrawer(spec, kind)};
+  const LIM = 400;
+  const chips = Object.keys(kc).length > 1 ? `<div class="chips" role="group" aria-label="Filtrar por tipo"><button type="button" class="chip ${kind ? '' : 'on'}" data-lkind="">Todos <b>${all.length}</b></button>${KORDER.filter(k => kc[k]).map(k => `<button type="button" class="chip ${kind === k ? 'on' : ''}" data-lkind="${k}"><span class="ti k-${k}"></span>${KIND_LABEL[k]} <b>${kc[k]}</b></button>`).join('')}</div>` : '';
+  $('#drawer').innerHTML = `<div class="dhead">${spec.sev ? `<span class="sev ${spec.sev}"></span><span class="kc">${SEV_LABEL[spec.sev]}</span>` : `<span class="kc">${esc(spec.eyebrow || 'Lista')}</span>`}<span style="flex:1"></span>
+      ${spec.check ? `<button class="btn ghost sm" data-check="${spec.check}" type="button">Abrir en Alertas</button>` : ''}
+      <button class="chev" id="dclose" aria-label="Cerrar" type="button" style="width:30px;height:30px"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="m3 3 8 8M11 3l-8 8" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></button></div>
+    <div class="dbody">
+      <div><h2>${esc(spec.title)} <span class="muted num">· ${list.length}</span></h2>${spec.desc ? `<p class="hint" style="margin-top:4px">${spec.desc}</p>` : ''}</div>
+      ${spec.extra || ''}
+      ${chips}
+      ${list.length ? `<div class="kids">${list.slice(0, LIM).map(it => { const par = it.parentId != null ? items.get(it.parentId) : null; const lg = logicalLabel(it);
+        return `<div class="kid ck">${ti(it)}<div style="min-width:0;flex:1"><button class="tt" data-open="${it.id}" type="button" title="${esc(it.title)}" style="display:block;max-width:100%">${esc(it.title)}</button>
+          <div class="ksub"><span class="rid">#${esc(it.id)}</span>${par ? `<span title="${esc(par.title)}">en ${esc(par.title)}</span>` : ''}${m.has.assigned ? `<span>${it.assigned ? esc(it.assigned) : 'Sin asignar'}</span>` : ''}${lg ? `<span>${esc(lg)}</span>` : ''}</div></div>${flag(it, false)}${pill(it)}</div>`; }).join('')}${list.length > LIM ? `<div class="kid muted">y ${list.length - LIM} más</div>` : ''}</div>` : '<div class="empty">Ningún elemento cumple esta condición.</div>'}
+    </div>`;
+  $('#drawer').hidden = false; $('#scrim').hidden = false;
+  $('#dclose').focus();
+}
+
+/* ---------- eventos ---------- */
+document.addEventListener('click', e => {
+  const t = e.target.closest('[data-toggle],[data-open],[data-reveal],[data-check],[data-cklist],[data-goto],[data-tcheck],[data-fk],[data-scope],[data-group],[data-zoom],[data-tview],[data-pgroup],[data-psize],[data-lkind],[data-list],[data-sset],[data-st]');
+  if (!t) return;
+  const ds = t.dataset;
+  const idOf = v => /^\d+$/.test(v) ? +v : v;
+  if (ds.toggle) { const id = idOf(ds.toggle); S.expanded.has(id) ? S.expanded.delete(id) : S.expanded.add(id); renderTreeBody(); return; }
+  if (ds.cklist) { openCheckDrawer(ds.cklist, ds.ckkind || ''); return; }
+  if ('lkind' in ds) { openListDrawer(S.curList, ds.lkind); return; }
+  if ('list' in ds) { const sp = S.lists[+ds.list]; if (sp) openListDrawer(sp); return; }
+  if (ds.sset) { S.settings[ds.sset] = ds.val; store.set('radar.settings', S.settings); render(); return; }
+  if (ds.st) { S[ds.st] = ds.val; render(); return; }
+  if (ds.open) { openDrawer(idOf(ds.open), t.closest('#drawer') ? S.drawerCtx : null); return; }
+  if (ds.zoom) { packZoomKey(ds.zoom); return; }
+  if (ds.tview) { S.treeView = ds.tview; store.set('radar.treeView', ds.tview); render(); return; }
+  if (ds.pgroup) { S.packGroup = ds.pgroup; PK = null; render(); return; }
+  if (ds.psize) { S.packSize = ds.psize; render(); return; }
+  if (ds.reveal) { reveal(idOf(ds.reveal)); return; }
+  if (ds.check) { S.openChecks.add(ds.check); closeDrawer(); go('problemas'); setTimeout(() => { const el = $('#chk-' + ds.check); el && el.scrollIntoView({block: 'start', behavior: 'smooth'}); }, 50); return; }
+  if (ds.goto) { e.preventDefault(); go(ds.goto); return; }
+  if (ds.tcheck) { const k = ds.tcheck; S.openChecks.has(k) ? S.openChecks.delete(k) : S.openChecks.add(k); render(); return; }
+  const setF = patch => { S.filters = Object.assign(emptyFilters(), patch); closeDrawer(); go('jerarquia'); };
+  if (ds.fk) return setF({[ds.fk]: ds.fv});
+  if (ds.scope) { S.peopleScope = ds.scope; render(); return; }
+  if (ds.group) { S.groupBy = ds.group; render(); return; }
+});
+document.addEventListener('click', e => {
+  const id = e.target.closest('button')?.id; if (!id) return;
+  if (id === 'btnLoad') $('#file').click();
+  else if (id === 'expAll') { S.model.items.forEach(it => it.children.length && S.expanded.add(it.id)); renderTreeBody(); }
+  else if (id === 'colAll') { S.expanded.clear(); renderTreeBody(); }
+  else if (id === 'clrF') { S.filters = emptyFilters(); render(); }
+  else if (id === 'dclose') closeDrawer();
+  else if (id === 'dback') { const c = S.drawerCtx; if (c) c.reopen(); }
+  else if (id === 'applyMap') {
+    document.querySelectorAll('[data-map]').forEach(s => { const k = s.dataset.map; S.map[k] = s.value === '__none' ? '' : s.value; S.overrides[k] = s.value; });
+    S.settings.hierarchy = $('#set-hier').value; S.settings.dateOrder = $('#set-date').value;
+    store.set('radar.map', S.overrides); store.set('radar.settings', S.settings);
+    rebuild(); toast('Mapeo aplicado.');
+  }
+  else if (id === 'resetMap') { S.overrides = {}; store.del('radar.map'); S.settings.hierarchy = 'auto'; S.settings.dateOrder = 'auto'; store.set('radar.settings', S.settings); S.map = detectMap(S.headers); rebuild(); toast('Detección automática restablecida.'); }
+  else if (id === 'saveSet') {
+    const d = parseInt($('#set-stale').value, 10); if (d > 0) S.settings.staleDays = d;
+    for (const [k, id] of [['wNew', 'set-wnew'], ['wAct', 'set-wact'], ['wRes', 'set-wres']]) { const v = parseInt($('#' + id).value, 10); if (v >= 0 && v <= 100) S.settings[k] = v; }
+    S.settings.adoUrl = $('#set-ado').value.trim();
+    store.set('radar.settings', S.settings); rebuild(); toast('Preferencias guardadas.');
+  }
+  else if (id === 'loadSample') { loadText(sampleCSV(), 'Ejemplo', {isSample: true}); go('resumen'); }
+  else if (id === 'clrHist') { store.del('radar.history'); store.del('radar.last'); render(); toast('Historial borrado.'); }
+});
+let qT;
+document.addEventListener('input', e => {
+  if (e.target.id === 'blq') { clearTimeout(qT); const pos = e.target.selectionStart; qT = setTimeout(() => { S.blQ = e.target.value; render(); const el = $('#blq'); if (el) { el.focus(); el.setSelectionRange(pos, pos); } }, 250); }
+  if (e.target.id === 'fq') { clearTimeout(qT); qT = setTimeout(() => { S.filters.q = e.target.value; refreshTree(); }, 200); }
+});
+document.addEventListener('change', e => {
+  const map = {ftype: 'type', fcat: 'cat', fwho: 'who', fiter: 'iter', farea: 'area', fproc: 'proc', fteam: 'team'};
+  if (map[e.target.id]) { S.filters[map[e.target.id]] = e.target.value; refreshTree(); }
+  if (e.target.id === 'fiss') { S.filters.issues = e.target.checked; refreshTree(); }
+  if (e.target.id === 'pj-days' || e.target.id === 'pj-ref') { const v = parseInt(e.target.value, 10); if (v > 0) { S.settings[e.target.id === 'pj-days' ? 'sprintDays' : 'projRef'] = v; store.set('radar.settings', S.settings); render(); } }
+  if (e.target.id === 'bl-sprint') { S.blSprint = e.target.value; render(); }
+  if (e.target.id === 'bl-done') { S.blDone = e.target.checked; render(); }
+  if (e.target.id === 'pweighted') { S.weighted = e.target.checked; store.set('radar.weighted', S.weighted); render(); }
+  if (e.target.id === 'palerts') { S.packAlerts = e.target.checked; renderPack(); }
+  if (e.target.id === 'file') { readFile(e.target.files[0]); e.target.value = ''; }
+});
+$('#scrim').addEventListener('click', closeDrawer);
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#drawer').hidden) closeDrawer(); });
+window.addEventListener('hashchange', () => { if (S.lastView === curView()) return; closeDrawer(); render(); window.scrollTo(0, 0); });
+let rzT; window.addEventListener('resize', () => { clearTimeout(rzT); rzT = setTimeout(() => { if (curView() === 'jerarquia' && S.treeView === 'map') renderPack(); }, 200); });
+let dragN = 0;
+window.addEventListener('dragenter', e => { if ([...(e.dataTransfer?.types || [])].includes('Files')) { dragN++; $('#drop').hidden = false; } });
+window.addEventListener('dragleave', () => { dragN = Math.max(0, dragN - 1); if (!dragN) $('#drop').hidden = true; });
+window.addEventListener('dragover', e => e.preventDefault());
+window.addEventListener('drop', e => { e.preventDefault(); dragN = 0; $('#drop').hidden = true; const f = e.dataTransfer?.files?.[0]; if (f) readFile(f); });
+
+/* ---------- inicio ---------- */
+(function init() {
+  if (!window.Papa) { $('#main').innerHTML = '<div class="panel empty">No se pudo cargar el lector de CSV. Revisa tu conexión y recarga la página.</div>'; return; }
+  const last = store.get('radar.last', null);
+  if (last && last.text && loadText(last.text, last.name, {loadedAt: last.loadedAt, restored: true})) return;
+  loadText(sampleCSV(), 'Ejemplo', {isSample: true});
+})();
+</script>
+
+</body></html>
